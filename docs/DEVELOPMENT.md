@@ -1,6 +1,7 @@
 # 开发说明
 
-面向贡献者 / 本地打包。用户使用说明见根目录 [README.md](../README.md)。
+面向贡献者 / 本地打包。用户使用说明见根目录 [README.md](../README.md)。  
+**发版清单**（GitHub Release + VS Marketplace + Open VSX）见根目录 [DEV.md](../DEV.md)；AI 须遵循 [AGENTS.md](../AGENTS.md)。
 
 ## 架构要点
 
