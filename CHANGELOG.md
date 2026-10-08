@@ -2,6 +2,16 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2026-10-08
+
+### Changed
+
+- Pad 改为常驻 SoundFont 实时多声部：和弦连按时音头对齐，不再每键离线渲一段 one-shot
+
+### Fixed
+
+- 几乎同时按下多个琴键时出现明显双音头 / 多音头的问题
+
 ## [1.0.1] - 2026-09-30
 
 ### Added

@@ -2,7 +2,7 @@
   "name": "vs-daw",
   "displayName": "VS DAW",
   "description": "纯文本多轨 DAW：鼓/钢琴/吉他/贝斯、MIDI+SoundFont 播放",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "publisher": "vs-daw",
   "engines": {

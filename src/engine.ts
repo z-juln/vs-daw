@@ -62,6 +62,10 @@ export class DawEngine {
     void this.inner.noteOn(note, velocity, channel, program);
   }
 
+  noteOff(note: number, channel: number): void {
+    this.inner.noteOff(note, channel);
+  }
+
   dispose(): void {
     this.inner.dispose();
   }
