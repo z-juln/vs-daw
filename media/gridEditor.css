@@ -12,6 +12,7 @@ body {
 }
 
 body {
+  position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -147,4 +148,115 @@ th.step.playhead {
   padding: 24px;
   color: var(--vscode-descriptionForeground);
   flex-shrink: 0;
+}
+
+.learn-toggle {
+  margin-left: auto;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-button-border, transparent);
+  padding: 2px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.learn-toggle.on {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.learn-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+}
+
+.learn-dock[hidden] {
+  display: none;
+}
+
+.learn-panel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 88%, transparent);
+  border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.35));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+  opacity: 0.92;
+}
+
+.learn-panel.wrong {
+  animation: learn-shake 0.3s ease;
+  border-color: var(--vscode-errorForeground, #f14c4c);
+}
+
+.learn-panel.correct {
+  border-color: #4ec9b0;
+}
+
+.learn-pitch {
+  font-size: 16px;
+  font-weight: 650;
+  font-family: var(--vscode-editor-font-family, ui-monospace, Menlo, monospace);
+  color: #4ec9b0;
+  line-height: 1;
+}
+
+.learn-meta {
+  font-size: 11px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.learn-hint {
+  font-size: 11px;
+  opacity: 0.7;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.learn-exit {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.4));
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+th.pitch.learn-target,
+td.cell.learn-target {
+  outline: 1px solid #4ec9b0;
+  background: color-mix(in srgb, #4ec9b0 22%, transparent);
+}
+
+th.pitch.learn-flash,
+td.cell.learn-flash {
+  animation: learn-row-flash 0.45s ease;
+}
+
+@keyframes learn-shake {
+  0%,
+  100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes learn-row-flash {
+  0%,
+  100% { background: transparent; }
+  35% { background: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 35%, transparent); }
 }

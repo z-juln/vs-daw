@@ -23,11 +23,14 @@ import {
   PlaylistRef,
   PlaylistViewState,
 } from "./playlistProvider";
+import { LearnHudProvider, LearnHudState } from "./learnHudProvider";
 import { RecorderProvider, RecorderViewState } from "./recorderProvider";
 
 export interface SidebarController {
   refreshPlaylist(): void;
   refreshRecorder(): void;
+  refreshLearnHud(): void;
+  revealLearnHud(): Promise<void>;
   tickRecorder(payload: {
     playing: boolean;
     position: string;
@@ -39,6 +42,7 @@ export interface SidebarController {
 
 export interface SidebarHost {
   getRecorderState(): RecorderViewState;
+  getLearnHudState(): LearnHudState;
   getPlaylistState(): PlaylistViewState;
   playScoreFile(absolutePath: string): Promise<void>;
   pauseScoreFile(absolutePath: string): Promise<void>;
@@ -71,6 +75,7 @@ export function registerSidebar(
 ): SidebarController {
   const playlist = new PlaylistProvider(root, () => host.getPlaylistState(), context.extensionUri);
   const recorder = new RecorderProvider(() => host.getRecorderState());
+  const learnHud = new LearnHudProvider(() => host.getLearnHudState());
   const creator = new CreatorProvider();
 
   const register = (command: string, handler: (...args: any[]) => unknown): void => {
@@ -349,12 +354,17 @@ export function registerSidebar(
     vscode.window.registerWebviewViewProvider("vsDaw.recorder", recorder, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
+    vscode.window.registerWebviewViewProvider("vsDaw.learnHud", learnHud, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
     vscode.window.registerTreeDataProvider("vsDaw.creator", creator),
   );
 
   return {
     refreshPlaylist: () => playlist.refresh(),
     refreshRecorder: () => recorder.refresh(),
+    refreshLearnHud: () => learnHud.refresh(),
+    revealLearnHud: () => learnHud.reveal(),
     tickRecorder: (payload) => recorder.tick(payload),
   };
 }

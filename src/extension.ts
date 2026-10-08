@@ -23,12 +23,20 @@ import { scheduleSession, scoreDurationSec, stepDurationSec } from "./schedule";
 import { emptyTemplate, formatScoreText, formatSessionText, writeHit } from "./serialize";
 import { registerSidebar, SidebarController } from "./sidebar/registerSidebar";
 import {
+  broadcastLearn,
   broadcastPlayhead,
   getActiveGridDocument,
   GRID_VIEW_TYPE,
   registerGridEditor,
   setGridSeekByStepHandler,
+  setLearnReadyHandler,
 } from "./gridEditor/DawGridEditorProvider";
+import {
+  extractMelody,
+  learnUiState,
+  LearnFeedback,
+  MelodyNote,
+} from "./melodyLearn";
 import {
   createTransport,
   positionAt,
@@ -76,6 +84,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let lastPlayheadStep = -1;
   let lastContextPlaying: boolean | undefined;
   let armedTrackName = "piano";
+  let learnActive = false;
+  let learnNotes: MelodyNote[] = [];
+  let learnIndex = 0;
+  let learnFeedback: LearnFeedback = "idle";
+  let learnFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 学习绑定的工程 URI：关 tab 不退出模式。 */
+  let learnDocumentUri: vscode.Uri | undefined;
+  let learnStepSec = 0;
+  let learnFileLabel = "";
+  const learnStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 5);
+  learnStatus.command = "vsDaw.toggleMelodyLearn";
+  context.subscriptions.push(learnStatus);
   let armedFallbackRole: TrackRole = "keys";
   /**
    * Pad 基准八度（低排 zxcvbnm 的 C）。
@@ -593,11 +613,163 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await vscode.commands.executeCommand("vscode.openWith", target, GRID_VIEW_TYPE);
     void vscode.window.showInformationMessage(`已克隆为 ${path.basename(target.fsPath)}`);
   });
+  const learnUri = (): vscode.Uri | undefined =>
+    learnDocumentUri ?? getActiveGridDocument()?.uri ?? activeDawDocument()?.uri;
+
+  const syncLearnChrome = (): void => {
+    void vscode.commands.executeCommand("setContext", "vsDaw.learnActive", learnActive);
+    if (!learnActive) {
+      learnStatus.hide();
+      return;
+    }
+    const ui = learnUiState(learnNotes, learnIndex, learnFeedback);
+    const done = ui.feedback === "done" || ui.total === 0;
+    const progress = done
+      ? `${ui.total}/${ui.total}`
+      : `${Math.min(ui.index + 1, ui.total)}/${ui.total}`;
+    const pitch = done ? "完成" : (ui.pitch || "—");
+    learnStatus.text = `$(circle-outline) ${pitch}  ${progress}`;
+    learnStatus.tooltip = learnFileLabel
+      ? `跟练 ${learnFileLabel}（点击关闭）`
+      : "跟练（点击关闭）";
+    learnStatus.show();
+  };
+
+  const pushLearnUi = (feedback: LearnFeedback = learnFeedback): void => {
+    learnFeedback = feedback;
+    const uri = learnUri();
+    if (!learnActive) {
+      broadcastLearn(undefined, null);
+      syncLearnChrome();
+      sidebar?.refreshRecorder();
+      sidebar?.refreshLearnHud();
+      return;
+    }
+    broadcastLearn(uri, { ...learnUiState(learnNotes, learnIndex, learnFeedback) });
+    syncLearnChrome();
+    sidebar?.refreshRecorder();
+    sidebar?.refreshLearnHud();
+  };
+
+  const seekLearnStep = (stepIndex: number): void => {
+    const stepSec = learnStepSec;
+    if (!(stepSec > 0)) return;
+    const document = (learnDocumentUri
+      ? vscode.workspace.textDocuments.find((item) => item.uri.toString() === learnDocumentUri.toString())
+      : undefined)
+      ?? getActiveGridDocument()
+      ?? activeDawDocument();
+    if (document) {
+      const text = document.getText();
+      const session = parseSession(text);
+      currentDuration = scoreDurationSec(session);
+      source = { uri: document.uri, text };
+      const lines = text.split(/\r?\n/);
+      rememberSession(session, `${document.uri.toString()}:${document.version}`, (i) => lines[i]);
+    }
+    seekTo(stepIndex * stepSec, { audio: false, chrome: false });
+    if (learnDocumentUri) broadcastPlayhead(learnDocumentUri, stepIndex);
+    pushTransportChrome();
+  };
+
+  const stopMelodyLearn = (): void => {
+    learnActive = false;
+    learnNotes = [];
+    learnIndex = 0;
+    learnFeedback = "idle";
+    learnDocumentUri = undefined;
+    learnStepSec = 0;
+    learnFileLabel = "";
+    if (learnFeedbackTimer) clearTimeout(learnFeedbackTimer);
+    learnFeedbackTimer = undefined;
+    pushLearnUi();
+    updateStatus();
+  };
+
+  const startMelodyLearn = async (): Promise<void> => {
+    const document = getActiveGridDocument() ?? activeDawDocument();
+    if (!document) {
+      void vscode.window.showWarningMessage("请先打开 .daw 工程（建议用网格编辑器）");
+      return;
+    }
+    const session = parseSession(document.getText() || emptyTemplate());
+    let track = session.tracks.find((item) => item.name === armedTrackName);
+    if (!track || track.role === "drums") {
+      track = session.tracks.find((item) => item.role === "keys" || item.role === "guitar" || item.role === "bass");
+    }
+    if (!track) {
+      void vscode.window.showWarningMessage("没有可练的音高轨（钢琴 / 吉他 / 贝斯）");
+      return;
+    }
+    const stepSec = stepDurationSec(session);
+    const fromStep = stepSec > 0 ? Math.floor(currentPosition / stepSec) : 0;
+    learnNotes = extractMelody(track, fromStep);
+    if (!learnNotes.length) {
+      void vscode.window.showWarningMessage("当前位置之后没有旋律起音可练");
+      return;
+    }
+    learnActive = true;
+    learnIndex = 0;
+    learnFeedback = "idle";
+    learnDocumentUri = document.uri;
+    learnStepSec = stepSec;
+    learnFileLabel = path.basename(document.uri.fsPath || document.uri.path);
+    armedTrackName = track.name;
+    armedFallbackRole = track.role;
+    applyRoleOctave(track.role);
+    if (!padMode.enabled) {
+      await padMode.set(true);
+      withAudio(() => audio.warmUp());
+    }
+    seekLearnStep(learnNotes[0]!.step);
+    pushLearnUi("idle");
+    void sidebar?.revealLearnHud();
+    updateStatus();
+  };
+
+  setLearnReadyHandler((uri) => {
+    if (!learnActive || !learnDocumentUri) return;
+    if (uri.toString() !== learnDocumentUri.toString()) return;
+    pushLearnUi(learnFeedback);
+  });
+
+  register("vsDaw.toggleMelodyLearn", async () => {
+    if (learnActive) stopMelodyLearn();
+    else await startMelodyLearn();
+  });
+
   register("vsDaw.padHit", async (key: string) => {
     const resolved = resolvePadNote(String(key).toLowerCase());
     if (!resolved) return;
     // 侧边栏点击始终可试听；键盘出声仍由 keybinding 的 padMode when 子句约束
     withAudio(() => audio.noteOn(resolved.note, resolved.velocity, resolved.channel, resolved.program));
+    if (learnActive) {
+      const expected = learnNotes[learnIndex];
+      if (!expected) {
+        pushLearnUi("done");
+        return;
+      }
+      if (resolved.note === expected.midi) {
+        learnIndex += 1;
+        if (learnIndex >= learnNotes.length) {
+          pushLearnUi("done");
+          return;
+        }
+        seekLearnStep(learnNotes[learnIndex]!.step);
+        pushLearnUi("correct");
+        if (learnFeedbackTimer) clearTimeout(learnFeedbackTimer);
+        learnFeedbackTimer = setTimeout(() => {
+          if (learnActive && learnFeedback === "correct") pushLearnUi("idle");
+        }, 280);
+        return;
+      }
+      pushLearnUi("wrong");
+      if (learnFeedbackTimer) clearTimeout(learnFeedbackTimer);
+      learnFeedbackTimer = setTimeout(() => {
+        if (learnActive && learnFeedback === "wrong") pushLearnUi("idle");
+      }, 480);
+      return;
+    }
     if (!recordingMode.enabled) return;
     const editor = activeDawEditor();
     const document = activeDawDocument();
@@ -863,15 +1035,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   void vscode.commands.executeCommand("setContext", "vsDaw.playing", false);
+  void vscode.commands.executeCommand("setContext", "vsDaw.learnActive", false);
   if (vscode.window.activeTextEditor) {
     ensureDawLanguage(vscode.window.activeTextEditor.document);
   }
   updateEditorChrome();
 
   sidebar = registerSidebar(context, libraryRoot, {
+    getLearnHudState: () => {
+      const learn = learnActive
+        ? learnUiState(learnNotes, learnIndex, learnFeedback)
+        : undefined;
+      return {
+        active: learnActive,
+        pitch: learn?.pitch ?? "",
+        index: learn?.index ?? 0,
+        total: learn?.total ?? 0,
+        feedback: learn?.feedback ?? "idle",
+        fileLabel: learnFileLabel,
+      };
+    },
     getRecorderState: () => {
       const { bpm, label } = positionLabel();
       const session = currentSession();
+      const learn = learnActive
+        ? learnUiState(learnNotes, learnIndex, learnFeedback)
+        : undefined;
       return {
         padEnabled: padMode.enabled,
         recordingEnabled: recordingMode.enabled,
@@ -888,6 +1077,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         armedTrackName,
         armedRole: armedRole(),
         octave,
+        learnActive,
+        learnPitch: learn?.pitch ?? "",
+        learnIndex: learn?.index ?? 0,
+        learnTotal: learn?.total ?? 0,
+        learnFeedback: learn?.feedback ?? "idle",
+        learnFileLabel,
       };
     },
     syncLibrary: async () => {

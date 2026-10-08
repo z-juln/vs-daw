@@ -2,7 +2,7 @@
   "name": "vs-daw",
   "displayName": "VS DAW",
   "description": "纯文本多轨 DAW：鼓/钢琴/吉他/贝斯、MIDI+SoundFont 播放",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "license": "MIT",
   "publisher": "vs-daw",
   "engines": {
@@ -77,6 +77,14 @@
         {
           "id": "vsDaw.creator",
           "name": "创建"
+        }
+      ],
+      "panel": [
+        {
+          "id": "vsDaw.learnHud",
+          "name": "跟练",
+          "type": "webview",
+          "when": "vsDaw.learnActive"
         }
       ]
     },
@@ -256,6 +264,12 @@
         "title": "VS DAW: 切换录制"
       },
       {
+        "command": "vsDaw.toggleMelodyLearn",
+        "title": "VS DAW: 跟练",
+        "category": "VS DAW",
+        "icon": "$(circle-outline)"
+      },
+      {
         "command": "vsDaw.creatorSetName",
         "title": "VS DAW: 设置名称"
       },
@@ -288,6 +302,11 @@
           "command": "vsDaw.cloneScore",
           "when": "resourceExtname == .daw || activeCustomEditorId == vsDaw.gridEditor",
           "group": "navigation@2"
+        },
+        {
+          "command": "vsDaw.toggleMelodyLearn",
+          "when": "resourceExtname == .daw || activeCustomEditorId == vsDaw.gridEditor",
+          "group": "navigation@3"
         }
       ],
       "view/title": [

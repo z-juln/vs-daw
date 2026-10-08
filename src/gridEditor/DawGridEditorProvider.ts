@@ -15,6 +15,7 @@ interface GridPanel {
 const panels = new Set<GridPanel>();
 let activeGridDocument: vscode.TextDocument | undefined;
 let seekByStepHandler: ((uri: vscode.Uri, stepIndex: number) => void) | undefined;
+let learnReadyHandler: ((uri: vscode.Uri) => void) | undefined;
 
 export function getActiveGridDocument(): vscode.TextDocument | undefined {
   return activeGridDocument;
@@ -26,6 +27,12 @@ export function setGridSeekByStepHandler(
   seekByStepHandler = handler;
 }
 
+export function setLearnReadyHandler(
+  handler: ((uri: vscode.Uri) => void) | undefined,
+): void {
+  learnReadyHandler = handler;
+}
+
 export function broadcastPlayhead(uri: vscode.Uri | undefined, step: number): void {
   if (!uri) return;
   const key = uri.toString();
@@ -33,6 +40,16 @@ export function broadcastPlayhead(uri: vscode.Uri | undefined, step: number): vo
     if (panel.document.uri.toString() === key) {
       void panel.webview.postMessage({ type: "playhead", step });
     }
+  }
+}
+
+export function broadcastLearn(
+  uri: vscode.Uri | undefined,
+  state: Record<string, unknown> | null,
+): void {
+  for (const panel of panels) {
+    if (uri && panel.document.uri.toString() !== uri.toString()) continue;
+    void panel.webview.postMessage({ type: "learn", state });
   }
 }
 
@@ -60,10 +77,19 @@ function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
     <label>meter <input id="meter" type="text" size="6" /></label>
     <label>steps <input id="steps" type="number" min="1" max="64" step="1" /></label>
     <label>swing <input id="swing" type="number" min="0" max="1" step="0.05" /></label>
+    <button id="learnToggle" type="button" class="learn-toggle">跟练</button>
   </div>
   <div id="warn" class="warn" hidden></div>
   <div id="empty" class="empty" hidden>当前轨没有音高行。可切回文本编辑器添加行，或用 Pad 录制。</div>
   <div id="scroller" class="scroller"></div>
+  <div id="learnDock" class="learn-dock" hidden>
+    <div id="learnPanel" class="learn-panel">
+      <span id="learnPitch" class="learn-pitch">—</span>
+      <span id="learnMeta" class="learn-meta">0/0</span>
+      <span id="learnHint" class="learn-hint"></span>
+      <button id="learnExit" type="button" class="learn-exit">关</button>
+    </div>
+  </div>
   <script src="${jsUri}"></script>
 </body>
 </html>`;
@@ -127,6 +153,11 @@ export class DawGridEditorProvider implements vscode.CustomTextEditorProvider {
       if (!message || typeof message !== "object") return;
       if (message.type === "ready") {
         pushSession();
+        learnReadyHandler?.(document.uri);
+        return;
+      }
+      if (message.type === "toggleLearn") {
+        await vscode.commands.executeCommand("vsDaw.toggleMelodyLearn");
         return;
       }
       if (message.type === "selectTrack" && typeof message.trackName === "string") {

@@ -2,6 +2,17 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.3] - 2026-10-08
+
+### Added
+
+- **跟练模式**：从播放头起拆出旋律最高音，Pad 弹对前进、弹错重试
+- 学习状态与编辑器 tab 解耦；侧边栏开关、底部 Panel「跟练」、状态栏常驻提示
+
+### Changed
+
+- 跟练 UI 更小、文案更克制（去掉「弹奏」等措辞）
+
 ## [1.0.2] - 2026-10-08
 
 ### Changed

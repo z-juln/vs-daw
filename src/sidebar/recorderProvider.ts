@@ -24,6 +24,12 @@ export interface RecorderViewState {
   armedTrackName: string;
   armedRole: TrackRole;
   octave: number;
+  learnActive: boolean;
+  learnPitch: string;
+  learnIndex: number;
+  learnTotal: number;
+  learnFeedback: string;
+  learnFileLabel: string;
 }
 
 function formatClock(sec: number): string {
@@ -161,6 +167,32 @@ export class RecorderProvider implements vscode.WebviewViewProvider {
   }
   button:hover { filter: brightness(1.08); }
   .meta { opacity: 0.8; flex: 1; min-width: 120px; }
+  .learn-box {
+    width: 100%;
+    margin: 2px 0 6px;
+    padding: 5px 8px;
+    border-radius: var(--radius);
+    border: 1px solid var(--vscode-widget-border, rgba(127,127,127,0.35));
+    background: color-mix(in srgb, var(--vscode-editorWidget-background) 80%, transparent);
+    box-sizing: border-box;
+  }
+  .learn-box.active {
+    border-color: color-mix(in srgb, #4ec9b0 45%, transparent);
+  }
+  .learn-box.wrong {
+    border-color: var(--vscode-errorForeground, #f14c4c);
+  }
+  .learn-box.correct, .learn-box.done {
+    border-color: #4ec9b0;
+  }
+  .learn-pitch {
+    font-size: 16px;
+    font-weight: 650;
+    font-family: var(--vscode-editor-font-family, ui-monospace, Menlo, monospace);
+    color: #4ec9b0;
+    line-height: 1.1;
+  }
+  .learn-sub { opacity: 0.75; margin-top: 1px; font-size: 11px; }
   .seek-wrap { width: 100%; margin: 4px 0 2px; }
   input[type="range"] {
     width: 100%;
@@ -180,8 +212,13 @@ export class RecorderProvider implements vscode.WebviewViewProvider {
   <div class="row">
     <button id="pad" type="button">Pad</button>
     <button id="rec" type="button">录制</button>
+    <button id="learn" type="button">跟练</button>
     <button id="play" class="primary" type="button">播放</button>
     <button id="stop" type="button">停止</button>
+  </div>
+  <div id="learnBox" class="learn-box" hidden>
+    <div id="learnPitch" class="learn-pitch">—</div>
+    <div id="learnSub" class="learn-sub"></div>
   </div>
   <div class="row">
     <button id="track" type="button">乐器</button>
@@ -225,6 +262,8 @@ function renderTransport(s) {
   $('pad').classList.toggle('on', s.padEnabled);
   $('rec').textContent = '录制：' + (s.recordingEnabled ? 'ON' : 'OFF');
   $('rec').classList.toggle('on', s.recordingEnabled);
+  $('learn').textContent = s.learnActive ? '跟练：ON' : '跟练';
+  $('learn').classList.toggle('on', !!s.learnActive);
   $('play').textContent = s.playing ? '暂停' : '播放';
   $('track').textContent = '乐器：' + s.roleLabel + ' · ' + s.armedTrackName;
   $('octUp').style.display = s.armedRole === 'drums' ? 'none' : '';
@@ -234,6 +273,25 @@ function renderTransport(s) {
   $('pos').textContent = '位置 ' + s.position;
   $('clock').textContent = s.clock;
   $('audio').textContent = '音频引擎：' + s.audioState;
+  const box = $('learnBox');
+  const active = !!s.learnActive;
+  box.hidden = !active;
+  box.className = 'learn-box' + (active ? ' active' : '');
+  if (active) {
+    const done = s.learnFeedback === 'done' || !s.learnTotal;
+    const fb = s.learnFeedback || 'idle';
+    if (fb === 'wrong') box.classList.add('wrong');
+    if (fb === 'correct' || fb === 'done') box.classList.add(fb === 'done' ? 'done' : 'correct');
+    $('learnPitch').textContent = done ? '完成' : (s.learnPitch || '—');
+    const progress = done
+      ? (s.learnTotal + ' / ' + s.learnTotal)
+      : (Math.min((s.learnIndex || 0) + 1, s.learnTotal || 0) + ' / ' + (s.learnTotal || 0));
+    let hint = progress + (s.learnFileLabel ? ' · ' + s.learnFileLabel : '');
+    if (fb === 'wrong') hint = '不对 · ' + s.learnPitch + ' · ' + progress;
+    if (fb === 'correct') hint = 'ok · ' + progress;
+    if (done) hint = '完成 · ' + progress + (s.learnFileLabel ? ' · ' + s.learnFileLabel : '');
+    $('learnSub').textContent = hint;
+  }
   if (!dragging) {
     $('seek').max = String(s.progressMax);
     $('seek').value = String(Math.min(s.positionSec, s.progressMax));
@@ -286,6 +344,7 @@ function applyTick(t) {
 
 $('pad').onclick = () => cmd('vsDaw.togglePadMode');
 $('rec').onclick = () => cmd('vsDaw.toggleRecording');
+$('learn').onclick = () => cmd('vsDaw.toggleMelodyLearn');
 $('play').onclick = () => cmd('vsDaw.playPause');
 $('stop').onclick = () => cmd('vsDaw.stop');
 $('track').onclick = () => cmd('vsDaw.pickTrack');

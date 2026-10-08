@@ -8,11 +8,19 @@
   const warnEl = document.getElementById("warn");
   const scroller = document.getElementById("scroller");
   const emptyEl = document.getElementById("empty");
+  const learnToggle = document.getElementById("learnToggle");
+  const learnDock = document.getElementById("learnDock");
+  const learnPanel = document.getElementById("learnPanel");
+  const learnPitch = document.getElementById("learnPitch");
+  const learnMeta = document.getElementById("learnMeta");
+  const learnHint = document.getElementById("learnHint");
+  const learnExit = document.getElementById("learnExit");
 
   let view = null;
   let playheadStep = -1;
   let suppressHeader = false;
   let scrubbing = false;
+  let learnState = null;
 
   function post(message) {
     vscode.postMessage(message);
@@ -33,6 +41,77 @@
     if (!Number.isFinite(step) || step < 0) return;
     paintPlayhead(step);
     post({ type: "seekStep", stepIndex: step });
+  }
+
+  function clearLearnMarks() {
+    for (const el of document.querySelectorAll(".learn-target, .learn-flash")) {
+      el.classList.remove("learn-target", "learn-flash");
+    }
+  }
+
+  function paintLearnMarks() {
+    clearLearnMarks();
+    if (!learnState || !learnState.active || learnState.step < 0 || !learnState.pitch) return;
+    const step = learnState.step;
+    const pitch = learnState.pitch;
+    for (const el of document.querySelectorAll(`[data-step="${step}"]`)) {
+      el.classList.add("learn-target");
+    }
+    for (const el of document.querySelectorAll("th.pitch")) {
+      if (el.textContent === pitch) el.classList.add("learn-target");
+    }
+    for (const el of document.querySelectorAll("td.cell")) {
+      if (el.dataset.rowId === pitch && Number(el.dataset.step) === step) {
+        el.classList.add("learn-target");
+        if (learnState.feedback === "wrong") el.classList.add("learn-flash");
+      }
+    }
+    if (learnState.feedback === "wrong") {
+      for (const el of document.querySelectorAll("th.pitch")) {
+        if (el.textContent === pitch) el.classList.add("learn-flash");
+      }
+    }
+  }
+
+  function applyLearnUi() {
+    if (!learnToggle || !learnDock || !learnPanel) return;
+    const active = Boolean(learnState && learnState.active);
+    learnToggle.classList.toggle("on", active);
+    learnToggle.textContent = active ? "跟练中" : "跟练";
+    learnDock.hidden = !active;
+    if (!active) {
+      clearLearnMarks();
+      learnPanel.classList.remove("wrong", "correct");
+      return;
+    }
+    const done = learnState.feedback === "done" || learnState.total === 0;
+    learnPitch.textContent = done ? "完成" : (learnState.pitch || "—");
+    learnMeta.textContent = done
+      ? `${learnState.total}/${learnState.total}`
+      : `${Math.min(learnState.index + 1, learnState.total)}/${learnState.total}`;
+    if (learnState.feedback === "wrong") {
+      learnHint.textContent = `不对 · ${learnState.pitch}`;
+      learnPanel.classList.remove("correct");
+      learnPanel.classList.remove("wrong");
+      void learnPanel.offsetWidth;
+      learnPanel.classList.add("wrong");
+    } else if (learnState.feedback === "correct") {
+      learnHint.textContent = "ok";
+      learnPanel.classList.remove("wrong");
+      learnPanel.classList.add("correct");
+    } else if (done) {
+      learnHint.textContent = "完成";
+      learnPanel.classList.remove("wrong");
+      learnPanel.classList.add("correct");
+    } else {
+      learnHint.textContent = "";
+      learnPanel.classList.remove("wrong", "correct");
+    }
+    paintLearnMarks();
+    if (learnState.step >= 0) {
+      const cell = document.querySelector(`td.cell[data-step="${learnState.step}"]`);
+      cell?.scrollIntoView({ block: "nearest", inline: "center" });
+    }
   }
 
   function render() {
@@ -66,6 +145,7 @@
       emptyEl.hidden = false;
       scroller.hidden = true;
       scroller.innerHTML = "";
+      applyLearnUi();
       return;
     }
     emptyEl.hidden = true;
@@ -116,6 +196,7 @@
     table.appendChild(tbody);
     scroller.innerHTML = "";
     scroller.appendChild(table);
+    applyLearnUi();
   }
 
   function paintPlayhead(step) {
@@ -174,6 +255,9 @@
     post({ type: "selectTrack", trackName: trackSelect.value });
   });
 
+  learnToggle?.addEventListener("click", () => post({ type: "toggleLearn" }));
+  learnExit?.addEventListener("click", () => post({ type: "toggleLearn" }));
+
   function emitHeader() {
     if (suppressHeader || !view) return;
     post({
@@ -201,6 +285,11 @@
     }
     if (message.type === "playhead") {
       paintPlayhead(Number(message.step));
+      return;
+    }
+    if (message.type === "learn") {
+      learnState = message.state;
+      applyLearnUi();
     }
   });
 
