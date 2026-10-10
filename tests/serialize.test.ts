@@ -1,17 +1,17 @@
 import { parseSession } from "../src/parser";
 import { emptyTemplate, formatSessionText, sortTrackRows } from "../src/serialize";
 
-test("emptyTemplate has four role tracks", () => {
+test("emptyTemplate has core + strings role tracks", () => {
   const session = parseSession(emptyTemplate({ bpm: 120, bars: 2 }));
   expect(session.tracks.map((t) => t.role).sort()).toEqual([
-    "bass", "drums", "guitar", "keys",
+    "bass", "drums", "guitar", "keys", "strings",
   ]);
 });
 
 test("formatSessionText preserves sustain cells", () => {
   const src = emptyTemplate();
   const again = formatSessionText(parseSession(src));
-  expect(parseSession(again).tracks.length).toBe(4);
+  expect(parseSession(again).tracks.length).toBe(5);
 });
 
 test("pitch rows serialize high notes above low notes", () => {

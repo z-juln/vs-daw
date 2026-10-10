@@ -2,7 +2,7 @@ import { midiToPitch } from "../pitch";
 import { sortTrackRows } from "../serialize";
 import { CellKind, DawTrack, Session, TrackRole } from "../types";
 import { velocityToCell } from "../velocity";
-import { GM_TO_DRUM, roleFromProgram } from "./gm";
+import { DEFAULT_PLUGIN, GM_TO_DRUM, roleFromProgram } from "./gm";
 
 interface RawNote {
   channel: number;
@@ -14,12 +14,7 @@ interface RawNote {
   trackName: string;
 }
 
-const PLUGIN: Record<TrackRole, string> = {
-  drums: "drum.gm",
-  keys: "keys.gm",
-  guitar: "gtr.gm",
-  bass: "bass.gm",
-};
+const PLUGIN = DEFAULT_PLUGIN;
 
 function readVarLen(view: DataView, offset: { value: number }): number {
   let result = 0;

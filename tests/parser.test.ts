@@ -28,6 +28,31 @@ C4 |x...|
   expect(session.warnings.some((w) => w.message.includes("role"))).toBe(true);
 });
 
+test("parses strings / brass / woodwind / pad roles", () => {
+  const session = parseSession(`# vs-daw 1
+track strings
+role: strings
+program: 48
+C4 |4=======|
+track brass
+role: brass
+G4 |6=======|
+track woodwind
+role: woodwind
+C5 |4===....|
+track pad
+role: pad
+E4 |2=======|
+`);
+  expect(session.tracks.map((t) => t.role)).toEqual([
+    "strings",
+    "brass",
+    "woodwind",
+    "pad",
+  ]);
+  expect(session.tracks[0].program).toBe(48);
+});
+
 test("global steps with velocity chars", () => {
   const session = parseSession(`steps: 8
 track drums

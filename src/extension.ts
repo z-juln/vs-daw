@@ -2,7 +2,15 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { getKeyMap, getLoop, getPadModeOnOpen, isDrumEditor } from "./config";
 import { DawEngine } from "./engine";
-import { DEFAULT_CHANNEL, DEFAULT_PROGRAM, DRUM_TO_GM } from "./midi/gm";
+import {
+  DEFAULT_CHANNEL,
+  DEFAULT_OCTAVE,
+  DEFAULT_PROGRAM,
+  DRUM_TO_GM,
+  isPitchRole,
+  ROLE_LABEL_ZH,
+  TRACK_ROLES,
+} from "./midi/gm";
 import { encodeMidi } from "./midi/encode";
 import { decodeMidiToSession } from "./midi/decode";
 import { createNativeContext } from "./nativeContext";
@@ -99,26 +107,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   learnStatus.command = "vsDaw.toggleMelodyLearn";
   context.subscriptions.push(learnStatus);
   let armedFallbackRole: TrackRole = "keys";
-  /**
-   * Pad 基准八度（低排 zxcvbnm 的 C）。
-   * 钢琴四排 C3–C6（含数字排）；吉他/贝斯三排，自 C2 / C1 起。
-   */
-  const DEFAULT_OCTAVE: Record<TrackRole, number> = {
-    drums: 4,
-    keys: 3,
-    guitar: 2,
-    bass: 1,
-  };
+  /** Pad 基准八度（低排 zxcvbnm 的 C）；各 role 默认见 midi/gm.ts。 */
   let octave = DEFAULT_OCTAVE.keys;
   let sidebar: SidebarController | undefined;
   const libraryRoot = defaultLibraryRoot();
 
-  const ROLE_PICK: { role: TrackRole; label: string; name: string }[] = [
-    { role: "drums", label: "鼓", name: "drums" },
-    { role: "keys", label: "钢琴", name: "piano" },
-    { role: "guitar", label: "吉他", name: "guitar" },
-    { role: "bass", label: "贝斯", name: "bass" },
-  ];
+  const ROLE_PICK: { role: TrackRole; label: string; name: string }[] = TRACK_ROLES.map((role) => ({
+    role,
+    label: ROLE_LABEL_ZH[role],
+    name: role === "keys" ? "piano" : role,
+  }));
 
   const applyRoleOctave = (role: TrackRole): void => {
     if (role === "drums") return;
@@ -726,7 +724,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const session = parseSession(document.getText() || emptyTemplate());
     let track = session.tracks.find((item) => item.name === armedTrackName);
     if (!track || track.role === "drums") {
-      track = session.tracks.find((item) => item.role === "keys" || item.role === "guitar" || item.role === "bass");
+      track = session.tracks.find((item) => isPitchRole(item.role));
     }
     if (!track) {
       void vscode.window.showWarningMessage("没有可练的音高轨（钢琴 / 吉他 / 贝斯）");
@@ -841,12 +839,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   register("vsDaw.pickTrack", async () => {
     const session = currentSession();
-    const roleLabel: Record<TrackRole, string> = {
-      drums: "鼓",
-      keys: "钢琴",
-      guitar: "吉他",
-      bass: "贝斯",
-    };
+    const roleLabel = ROLE_LABEL_ZH;
     const items = session?.tracks.length
       ? session.tracks.map((track) => ({
         label: track.name === armedTrackName

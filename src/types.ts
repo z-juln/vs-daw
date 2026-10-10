@@ -2,7 +2,16 @@ export type DrumId =
   | "kick" | "snare" | "ch" | "oh" | "clap"
   | "tom1" | "tom2" | "tom3" | "crash" | "ride";
 
-export type TrackRole = "drums" | "keys" | "guitar" | "bass";
+/** GM 大类轨角色；音色来自内置 gm.sf3，换 role/program 不增加插件体积。 */
+export type TrackRole =
+  | "drums"
+  | "keys"
+  | "guitar"
+  | "bass"
+  | "strings"
+  | "brass"
+  | "woodwind"
+  | "pad";
 
 /** rest/hold；起音：o/x/X 或力度档 1(最弱)–9(最强)。 */
 export type CellKind =

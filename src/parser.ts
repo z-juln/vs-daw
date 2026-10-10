@@ -1,3 +1,4 @@
+import { DEFAULT_PLUGIN, TRACK_ROLES } from "./midi/gm";
 import { pitchToMidi } from "./pitch";
 import {
   CellKind,
@@ -11,15 +12,6 @@ import { charToCell } from "./velocity";
 const HEADER_RE = /^([A-Za-z][A-Za-z0-9_-]{0,15})\s*:\s*(.*)$/;
 const TRACK_START_RE = /^track\s+([A-Za-z][A-Za-z0-9_-]{0,31})\s*$/i;
 const ROW_RE = /^([A-Za-z#][A-Za-z0-9#_^-]{0,15})(?:\s+|\s*(?=\|))(.*)$/;
-
-const ROLES: TrackRole[] = ["drums", "keys", "guitar", "bass"];
-
-const DEFAULT_PLUGIN: Record<TrackRole, string> = {
-  drums: "drum.gm",
-  keys: "keys.gm",
-  guitar: "gtr.gm",
-  bass: "bass.gm",
-};
 
 function cellKind(char: string, warnings: ParseWarning[], line: number): CellKind {
   const cell = charToCell(char);
@@ -67,12 +59,18 @@ function inferRole(name: string): TrackRole {
   if (lower.includes("drum") || lower === "perc" || lower === "beat") return "drums";
   if (lower.includes("bass")) return "bass";
   if (lower.includes("gtr") || lower.includes("guitar")) return "guitar";
+  if (lower.includes("string") || lower.includes("violin") || lower.includes("cello")) return "strings";
+  if (lower.includes("brass") || lower.includes("trumpet") || lower.includes("horn")) return "brass";
+  if (lower.includes("wood") || lower.includes("flute") || lower.includes("sax") || lower.includes("clarinet")) {
+    return "woodwind";
+  }
+  if (lower.includes("pad") || lower.includes("synth")) return "pad";
   return "keys";
 }
 
 function parseRole(raw: string): TrackRole | null {
   const value = raw.trim().toLowerCase() as TrackRole;
-  return ROLES.includes(value) ? value : null;
+  return TRACK_ROLES.includes(value) ? value : null;
 }
 
 export function parseSession(text: string): Session {

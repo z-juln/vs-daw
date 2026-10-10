@@ -1,6 +1,6 @@
 ---
 name: writing-vs-daw-scores
-description: Use when creating or editing VS DAW `.daw` multi-track session files, drum/keys/guitar/bass grids, or MIDI import/export.
+description: Use when creating or editing VS DAW `.daw` multi-track session files, drum/keys/guitar/bass/strings/brass/woodwind/pad grids, or MIDI import/export.
 ---
 
 # 编写 VS DAW 工程
@@ -47,9 +47,9 @@ E2     |x=======x=======|
 轨头：
 
 - `track <name>`：开始一条轨。
-- `role`: `drums` | `keys` | `guitar` | `bass`。
-- `plugin`: 可选提示（如 `drum.gm` / `keys.gm`）。
-- `program`: GM 音色号（鼓轨忽略；钢琴 0、吉他 24、贝斯 32 等）。
+- `role`: `drums` | `keys` | `guitar` | `bass` | `strings` | `brass` | `woodwind` | `pad`。
+- `plugin`: 可选提示（如 `drum.gm` / `keys.gm` / `strings.gm`）。
+- `program`: GM 音色号（鼓轨忽略；钢琴 0、吉他 24、贝斯 32、弦乐合奏 48、铜管组 61、长笛 73、Warm Pad 89 等）。均来自内置 `gm.sf3`，换乐器不增大插件体积。
 
 格子：
 

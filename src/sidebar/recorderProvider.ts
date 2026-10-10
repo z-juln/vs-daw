@@ -1,14 +1,8 @@
 import * as vscode from "vscode";
 import { DEFAULT_KEY_MAP, DRUM_LABELS } from "../drums";
+import { ROLE_LABEL_ZH } from "../midi/gm";
 import { pitchPadRows } from "../padLayout";
 import { TrackRole } from "../types";
-
-const ROLE_LABEL: Record<TrackRole, string> = {
-  drums: "鼓",
-  keys: "钢琴",
-  guitar: "吉他",
-  bass: "贝斯",
-};
 
 export interface RecorderViewState {
   padEnabled: boolean;
@@ -93,7 +87,7 @@ export class RecorderProvider implements vscode.WebviewViewProvider {
   private serialize(state: RecorderViewState) {
     return {
       ...state,
-      roleLabel: ROLE_LABEL[state.armedRole],
+      roleLabel: ROLE_LABEL_ZH[state.armedRole],
       clock: `${formatClock(state.positionSec)} / ${formatClock(state.durationSec)}`,
       progressMax: Math.max(0.001, state.durationSec),
       pads: this.pads(state),

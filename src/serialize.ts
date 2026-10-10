@@ -48,6 +48,7 @@ const TEMPLATE_TRACKS: { name: string; role: TrackRole; plugin: string }[] = [
   { name: "piano", role: "keys", plugin: "keys.gm" },
   { name: "guitar", role: "guitar", plugin: "gtr.gm" },
   { name: "bass", role: "bass", plugin: "bass.gm" },
+  { name: "strings", role: "strings", plugin: "strings.gm" },
 ];
 
 export function emptyTemplate(options: EmptyTemplateOptions = {}): string {
@@ -71,7 +72,15 @@ export function emptyTemplate(options: EmptyTemplateOptions = {}): string {
         lines.push(formatRow(drumId, rests, 16));
       }
     } else {
-      const seed = track.role === "bass" ? "E2" : track.role === "guitar" ? "E3" : "C4";
+      const seed = track.role === "bass"
+        ? "E2"
+        : track.role === "guitar"
+          ? "E3"
+          : track.role === "strings" || track.role === "brass"
+            ? "C4"
+            : track.role === "woodwind"
+              ? "C5"
+              : "C4";
       lines.push(formatRow(seed, rests, 16));
     }
     lines.push("");
