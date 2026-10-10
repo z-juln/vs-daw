@@ -1,4 +1,9 @@
-import { createTransport, positionAt, reduceTransport } from "../src/transport";
+import {
+  createTransport,
+  positionAt,
+  reduceTransport,
+  resolveTransportAction,
+} from "../src/transport";
 
 test("播放、暂停和续播保持位置", () => {
   let transport = createTransport({ loop: true });
@@ -29,4 +34,12 @@ test("playPause 切换状态", () => {
   expect(transport.status).toBe("playing");
   transport = reduceTransport(transport, { type: "playPause" }, 1);
   expect(transport.status).toBe("paused");
+});
+
+test("播 A 时焦点在 B：playPause / play 应切到 B 重开", () => {
+  expect(resolveTransportAction("playing", "playPause", "file:a", "file:b")).toBe("restart");
+  expect(resolveTransportAction("playing", "play", "file:a", "file:b")).toBe("restart");
+  expect(resolveTransportAction("playing", "playPause", "file:a", "file:a")).toBe("pause");
+  expect(resolveTransportAction("paused", "playPause", "file:a", "file:b")).toBe("restart");
+  expect(resolveTransportAction("stopped", "play", "file:a", "file:a")).toBe("play");
 });

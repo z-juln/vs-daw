@@ -9,6 +9,7 @@ export const GRID_VIEW_TYPE = "vsDaw.gridEditor";
 interface GridPanel {
   document: vscode.TextDocument;
   webview: vscode.Webview;
+  panel: vscode.WebviewPanel;
   selectedTrack?: string;
 }
 
@@ -16,8 +17,12 @@ const panels = new Set<GridPanel>();
 let activeGridDocument: vscode.TextDocument | undefined;
 let seekByStepHandler: ((uri: vscode.Uri, stepIndex: number) => void) | undefined;
 let learnReadyHandler: ((uri: vscode.Uri) => void) | undefined;
+let activeGridChangeHandler: ((uri: vscode.Uri) => void) | undefined;
 
 export function getActiveGridDocument(): vscode.TextDocument | undefined {
+  for (const item of panels) {
+    if (item.panel.active) return item.document;
+  }
   return activeGridDocument;
 }
 
@@ -31,6 +36,12 @@ export function setLearnReadyHandler(
   handler: ((uri: vscode.Uri) => void) | undefined,
 ): void {
   learnReadyHandler = handler;
+}
+
+export function setActiveGridChangeHandler(
+  handler: ((uri: vscode.Uri) => void) | undefined,
+): void {
+  activeGridChangeHandler = handler;
 }
 
 export function broadcastPlayhead(uri: vscode.Uri | undefined, step: number): void {
@@ -115,6 +126,7 @@ export class DawGridEditorProvider implements vscode.CustomTextEditorProvider {
     const panel: GridPanel = {
       document,
       webview: webviewPanel.webview,
+      panel: webviewPanel,
     };
     panels.add(panel);
     activeGridDocument = document;
@@ -138,7 +150,10 @@ export class DawGridEditorProvider implements vscode.CustomTextEditorProvider {
     });
 
     webviewPanel.onDidChangeViewState((event) => {
-      if (event.webviewPanel.active) activeGridDocument = document;
+      if (event.webviewPanel.active) {
+        activeGridDocument = document;
+        activeGridChangeHandler?.(document.uri);
+      }
     });
 
     webviewPanel.onDidDispose(() => {

@@ -28,6 +28,7 @@ import {
   getActiveGridDocument,
   GRID_VIEW_TYPE,
   registerGridEditor,
+  setActiveGridChangeHandler,
   setGridSeekByStepHandler,
   setLearnReadyHandler,
 } from "./gridEditor/DawGridEditorProvider";
@@ -41,6 +42,7 @@ import {
   createTransport,
   positionAt,
   reduceTransport,
+  resolveTransportAction,
   TransportEngine,
   TransportEvent,
 } from "./transport";
@@ -221,8 +223,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return { bpm: session.bpm, label: `${bar}.${beat}` };
   };
 
+  const transportOwnsActiveDoc = (): boolean => {
+    const document = activeDawDocument();
+    if (!document?.uri || !source?.uri) return true;
+    return document.uri.toString() === source.uri.toString();
+  };
+
   const setPlayingContext = (): void => {
-    const playing = transport.status === "playing";
+    // 正在播 A、焦点在 B 时标题栏应显示「播放」（切到 B），而不是「暂停」
+    const playing = transport.status === "playing" && transportOwnsActiveDoc();
     if (lastContextPlaying === playing) return;
     lastContextPlaying = playing;
     void vscode.commands.executeCommand("setContext", "vsDaw.playing", playing);
@@ -418,7 +427,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     updateEditorChrome();
     const { bpm, label } = positionLabel();
     sidebar?.tickRecorder({
-      playing: transport.status === "playing",
+      playing: transport.status === "playing" && transportOwnsActiveDoc(),
       position: label,
       positionSec: currentPosition,
       durationSec: currentDuration,
@@ -430,9 +439,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     event: TransportEvent,
     explicit?: PlaybackSource,
   ): Promise<void> => {
-    const resolvedType = event.type === "playPause"
-      ? (transport.status === "playing" ? "pause" : "play")
-      : event.type;
+    let next = explicit ?? currentSource();
+    const resolvedType = resolveTransportAction(
+      transport.status,
+      event.type,
+      source?.uri?.toString(),
+      next?.uri?.toString(),
+    );
 
     if (resolvedType === "pause" || resolvedType === "stop") {
       if (!source) return;
@@ -452,7 +465,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
-    let next = explicit ?? currentSource();
     if (!next) {
       void vscode.window.showWarningMessage("请先打开 .daw，或在播放列表中选择");
       return;
@@ -465,21 +477,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       next = { uri: document.uri, text: (activeDawDocument() ?? document).getText() };
     }
 
+    const switchingFile = Boolean(
+      source?.uri
+      && next.uri
+      && source.uri.toString() !== next.uri.toString(),
+    );
+
     // 暂停/停止后同曲未改内容：跳过 SoundFont 整曲重渲染，直接续播
-    const canResume = sameLoadedSource(next);
+    const canResume = !switchingFile && resolvedType !== "restart" && sameLoadedSource(next);
     if (!canResume) {
       const loaded = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Window, title: "VS DAW: 加载中…" },
         () => loadSource(next),
       );
       if (!loaded) return;
+      if (switchingFile || resolvedType === "restart") {
+        currentPosition = 0;
+        transport = {
+          ...transport,
+          loop: getLoop(),
+          anchorScoreSec: 0,
+          anchorWallSec: nowSec(),
+        };
+      }
     } else {
       source = next;
       transport = { ...transport, loop: getLoop() };
     }
 
     const time = nowSec();
-    transport = reduceTransport(transport, { type: resolvedType }, time);
+    transport = reduceTransport(
+      transport,
+      { type: resolvedType === "restart" ? "restart" : "play" },
+      time,
+    );
     currentPosition = positionAt(transport, time, currentDuration);
     // 先改按钮，再起音频
     pushTransportChrome();
@@ -731,6 +762,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!learnActive || !learnDocumentUri) return;
     if (uri.toString() !== learnDocumentUri.toString()) return;
     pushLearnUi(learnFeedback);
+  });
+
+  setActiveGridChangeHandler(() => {
+    setPlayingContext();
+    updateEditorChrome();
+    sidebar?.refreshRecorder();
+    sidebar?.refreshPlaylist();
   });
 
   register("vsDaw.toggleMelodyLearn", async () => {
@@ -1064,7 +1102,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return {
         padEnabled: padMode.enabled,
         recordingEnabled: recordingMode.enabled,
-        playing: transport.status === "playing",
+        playing: transport.status === "playing" && transportOwnsActiveDoc(),
         bpm,
         position: label,
         positionSec: currentPosition,

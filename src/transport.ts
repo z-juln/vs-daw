@@ -36,6 +36,34 @@ export function positionAt(
   return Math.min(Math.max(0, raw), durationSec);
 }
 
+/**
+ * 将 UI 事件解析成实际动作。
+ * 正在播 A、焦点已切到 B 时，play / playPause 应切到 B 重开，而不是暂停 A。
+ */
+export function resolveTransportAction(
+  status: TransportStatus,
+  eventType: TransportEvent["type"],
+  loadedUri?: string,
+  activeUri?: string,
+): "play" | "pause" | "stop" | "restart" {
+  const switching = Boolean(
+    loadedUri
+    && activeUri
+    && loadedUri !== activeUri,
+  );
+  if (eventType === "stop" || eventType === "pause" || eventType === "restart") {
+    return eventType;
+  }
+  if (eventType === "play") {
+    return switching ? "restart" : "play";
+  }
+  // playPause
+  if (status === "playing") {
+    return switching ? "restart" : "pause";
+  }
+  return switching ? "restart" : "play";
+}
+
 export function reduceTransport(
   transport: TransportEngine,
   event: TransportEvent,

@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.4] - 2026-10-10
+
+### Fixed
+
+- 播放 A 后切换到 B 再点播放：会正确加载并播放 B（不再继续播 A / 误暂停 A）
+- 网格编辑器焦点切换时更准确识别当前工程
+
 ## [1.0.3] - 2026-10-08
 
 ### Added
