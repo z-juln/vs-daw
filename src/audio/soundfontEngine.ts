@@ -94,11 +94,19 @@ async function mixSampleNotes(
       cache.set(samplePath, stereo);
     }
     const gain = Math.max(0, Math.min(1, note.velocity / 127));
-    const start = Math.max(0, Math.floor(note.timeSec * sampleRate));
-    growPcm(pcm, start + stereo.left.length);
-    for (let i = 0; i < stereo.left.length; i += 1) {
-      pcm.left[start + i] += stereo.left[i] * gain;
-      pcm.right[start + i] += stereo.right[i] * gain;
+    let start = Math.floor(note.timeSec * sampleRate);
+    let srcOffset = 0;
+    if (start < 0) {
+      // 负偏移：从采样中段起播，使听感相对格子提前
+      srcOffset = -start;
+      start = 0;
+    }
+    if (srcOffset >= stereo.left.length) continue;
+    const copyLen = stereo.left.length - srcOffset;
+    growPcm(pcm, start + copyLen);
+    for (let i = 0; i < copyLen; i += 1) {
+      pcm.left[start + i] += stereo.left[srcOffset + i] * gain;
+      pcm.right[start + i] += stereo.right[srcOffset + i] * gain;
     }
   }
 }

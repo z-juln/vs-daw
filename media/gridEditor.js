@@ -5,6 +5,8 @@
   const meterInput = document.getElementById("meter");
   const stepsInput = document.getElementById("steps");
   const swingInput = document.getElementById("swing");
+  const offsetWrap = document.getElementById("offsetWrap");
+  const sampleOffsetInput = document.getElementById("sampleOffset");
   const warnEl = document.getElementById("warn");
   const scroller = document.getElementById("scroller");
   const emptyEl = document.getElementById("empty");
@@ -129,6 +131,15 @@
     meterInput.value = view.meter;
     stepsInput.value = String(view.stepsPerBar);
     swingInput.value = String(view.swing);
+    if (offsetWrap && sampleOffsetInput) {
+      const isSample = view.trackRole === "sample";
+      offsetWrap.hidden = !isSample;
+      if (isSample) {
+        sampleOffsetInput.value = String(
+          Number.isFinite(view.sampleOffsetSec) ? view.sampleOffsetSec : 0,
+        );
+      }
+    }
     suppressHeader = false;
 
     if (view.warnings && view.warnings.length) {
@@ -274,6 +285,15 @@
   for (const el of [bpmInput, meterInput, stepsInput, swingInput]) {
     el.addEventListener("change", emitHeader);
   }
+
+  sampleOffsetInput?.addEventListener("change", () => {
+    if (suppressHeader || !view) return;
+    post({
+      type: "sampleOffsetChange",
+      trackName: view.trackName,
+      offsetSec: Number(sampleOffsetInput.value),
+    });
+  });
 
   window.addEventListener("message", (event) => {
     const message = event.data;

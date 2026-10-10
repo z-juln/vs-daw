@@ -54,6 +54,7 @@ export function scheduleSession(session: Session): TimedNote[] {
       if (track.role === "sample") {
         const samplePath = normalizeSamplePath(row.id);
         if (!samplePath) continue;
+        const offsetSec = row.sampleOffsetSec ?? track.offsetSec ?? 0;
         for (let step = 0; step < row.cells.length; step += 1) {
           const cell = row.cells[step];
           const velocity = cellVelocity(cell);
@@ -65,7 +66,8 @@ export function scheduleSession(session: Session): TimedNote[] {
             role: "sample",
             note: 0,
             velocity,
-            timeSec: stepTimeSec(session, step),
+            // 允许为负：混音时从采样中段起播，相当于相对格子提前
+            timeSec: stepTimeSec(session, step) + offsetSec,
             durationSec: Math.max(stepSec * 0.9, (end - step) * stepSec),
             channel,
             program,

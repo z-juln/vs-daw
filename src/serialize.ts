@@ -20,6 +20,24 @@ function formatRow(id: string, cells: CellKind[], stepsPerBar: number): string {
   return `${id.padEnd(ID_WIDTH)} ${formatCells(cells, stepsPerBar)}`;
 }
 
+function formatSampleRow(
+  id: string,
+  cells: CellKind[],
+  stepsPerBar: number,
+  sampleOffsetSec?: number,
+): string {
+  const offset = sampleOffsetSec !== undefined && sampleOffsetSec !== 0
+    ? ` offset:${trimOffset(sampleOffsetSec)}`
+    : "";
+  // 路径可能很长，不再强制 pad 到鼓件宽度
+  return `${id}${offset} ${formatCells(cells, stepsPerBar)}`;
+}
+
+function trimOffset(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return String(rounded);
+}
+
 /** 音高行：高音在上；鼓件：内置顺序。 */
 export function sortTrackRows(track: DawTrack): void {
   if (track.role === "drums") {
@@ -103,9 +121,16 @@ export function formatSessionText(session: Session): string {
     lines.push(`plugin: ${track.plugin}`);
     if (track.program !== undefined) lines.push(`program: ${track.program}`);
     if (track.channel !== undefined) lines.push(`channel: ${track.channel + 1}`);
+    if (track.role === "sample" && track.offsetSec !== undefined && track.offsetSec !== 0) {
+      lines.push(`offset: ${trimOffset(track.offsetSec)}`);
+    }
     sortTrackRows(track);
     for (const row of track.rows) {
-      lines.push(formatRow(row.id, row.cells, session.stepsPerBar));
+      if (track.role === "sample") {
+        lines.push(formatSampleRow(row.id, row.cells, session.stepsPerBar, row.sampleOffsetSec));
+      } else {
+        lines.push(formatRow(row.id, row.cells, session.stepsPerBar));
+      }
     }
     lines.push("");
   }

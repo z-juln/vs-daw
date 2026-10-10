@@ -13,9 +13,16 @@ import { charToCell } from "./velocity";
 const HEADER_RE = /^([A-Za-z][A-Za-z0-9_-]{0,15})\s*:\s*(.*)$/;
 const TRACK_START_RE = /^track\s+([A-Za-z][A-Za-z0-9_-]{0,31})\s*$/i;
 const ROW_RE = /^([A-Za-z#][A-Za-z0-9#_^-]{0,15})(?:\s+|\s*(?=\|))(.*)$/;
-/** 采样行：相对包根路径，如 assets/kick.wav */
+/** 采样行：assets/kick.wav 或 assets/kick.wav offset:-0.05 |...| */
 const SAMPLE_ROW_RE =
-  /^([A-Za-z0-9_./+-]+\.(?:wav|ogg|mp3|flac|aiff|aif))(?:\s+|\s*(?=\|))(.*)$/i;
+  /^([A-Za-z0-9_./+-]+\.(?:wav|ogg|mp3|flac|aiff|aif))(?:\s+offset\s*:\s*(-?\d+(?:\.\d+)?))?(?:\s+|\s*(?=\|))(.*)$/i;
+
+function parseOffsetSec(raw: string): number | null {
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed)) return null;
+  // 合理范围：±60s，避免笔误拖垮时间线
+  return Math.min(60, Math.max(-60, parsed));
+}
 
 function cellKind(char: string, warnings: ParseWarning[], line: number): CellKind {
   const cell = charToCell(char);
@@ -166,6 +173,10 @@ export function parseSession(text: string): Session {
         const parsed = Number(value);
         if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 16) current.channel = parsed - 1;
         else warnings.push({ message: "channel 无效（1–16）", line: lineIndex });
+      } else if (key === "offset") {
+        const parsed = parseOffsetSec(value);
+        if (parsed === null) warnings.push({ message: "offset 无效（秒）", line: lineIndex });
+        else current.offsetSec = parsed;
       } else {
         warnings.push({ message: `未知轨属性 "${key}"`, line: lineIndex });
       }
@@ -202,9 +213,16 @@ export function parseSession(text: string): Session {
       current.role = "sample";
       current.plugin = DEFAULT_PLUGIN.sample;
     }
-    const cells = parseGrid(row[2].trim(), stepsPerBar, warnings, lineIndex);
+    const gridRaw = sampleRow ? row[3].trim() : row[2].trim();
+    const cells = parseGrid(gridRaw, stepsPerBar, warnings, lineIndex);
+    let sampleOffsetSec: number | undefined;
+    if (sampleRow && row[2] !== undefined && row[2] !== "") {
+      const parsed = parseOffsetSec(row[2]);
+      if (parsed === null) warnings.push({ message: "行 offset 无效（秒）", line: lineIndex });
+      else sampleOffsetSec = parsed;
+    }
     const existing = current.rows.findIndex((item) => item.id.toLowerCase() === id.toLowerCase());
-    const gridRow = { id, cells, lineIndex };
+    const gridRow = { id, cells, lineIndex, sampleOffsetSec };
     if (existing >= 0) current.rows[existing] = gridRow;
     else current.rows.push(gridRow);
   });

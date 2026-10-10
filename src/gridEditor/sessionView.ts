@@ -9,6 +9,9 @@ export interface GridRowView {
 export interface GridSessionView {
   trackName: string;
   trackNames: string[];
+  trackRole?: string;
+  /** 当前采样轨的触发偏移（秒）。 */
+  sampleOffsetSec?: number;
   bpm: number;
   meter: string;
   stepsPerBar: number;
@@ -27,6 +30,8 @@ export function sessionToView(session: Session, trackName?: string): GridSession
   return {
     trackName: resolvedName,
     trackNames,
+    trackRole: track?.role,
+    sampleOffsetSec: track?.role === "sample" ? (track.offsetSec ?? 0) : undefined,
     bpm: session.bpm,
     meter: session.meter,
     stepsPerBar: session.stepsPerBar,
@@ -40,6 +45,27 @@ export function sessionToView(session: Session, trackName?: string): GridSession
       line: warning.line,
     })),
     unsupportedVersion: session.unsupportedVersion,
+  };
+}
+
+/** 设置采样轨轨级 offset（秒）。 */
+export function applySampleTrackOffset(
+  session: Session,
+  trackName: string,
+  offsetSec: number,
+): Session {
+  const value = Number.isFinite(offsetSec)
+    ? Math.min(60, Math.max(-60, offsetSec))
+    : 0;
+  return {
+    ...session,
+    tracks: session.tracks.map((track) => {
+      if (track.name !== trackName || track.role !== "sample") return track;
+      return {
+        ...track,
+        offsetSec: value === 0 ? undefined : value,
+      };
+    }),
   };
 }
 

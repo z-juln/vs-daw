@@ -3,7 +3,7 @@ import { isDawPackageFile, PACKAGE_INDEX } from "../dawPackage";
 import { parseSession } from "../parser";
 import { formatSessionText } from "../serialize";
 import { applyCellEdit } from "./cellEdit";
-import { applyHeaderFields, sessionToView } from "./sessionView";
+import { applyHeaderFields, applySampleTrackOffset, sessionToView } from "./sessionView";
 
 export const GRID_VIEW_TYPE = "vsDaw.gridEditor";
 
@@ -89,6 +89,7 @@ function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
     <label>meter <input id="meter" type="text" size="6" /></label>
     <label>steps <input id="steps" type="number" min="1" max="64" step="1" /></label>
     <label>swing <input id="swing" type="number" min="0" max="1" step="0.05" /></label>
+    <label id="offsetWrap" hidden>采样偏移(秒) <input id="sampleOffset" type="number" step="0.01" min="-60" max="60" title="负=提前，正=延后" /></label>
     <button id="learnToggle" type="button" class="learn-toggle">跟练</button>
   </div>
   <div id="warn" class="warn" hidden></div>
@@ -219,6 +220,15 @@ export class DawGridEditorProvider implements vscode.CustomTextEditorProvider {
             ? fields.swing
             : undefined,
         });
+        await replaceDocumentText(document, formatSessionText(next));
+        return;
+      }
+      if (message.type === "sampleOffsetChange") {
+        const trackName = String(message.trackName ?? panel.selectedTrack ?? "");
+        const offsetSec = Number(message.offsetSec);
+        if (!trackName || !Number.isFinite(offsetSec)) return;
+        const session = parseSession(document.getText());
+        const next = applySampleTrackOffset(session, trackName, offsetSec);
         await replaceDocumentText(document, formatSessionText(next));
       }
     });

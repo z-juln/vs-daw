@@ -32,6 +32,8 @@ export interface GridRow {
   id: string;
   cells: CellKind[];
   lineIndex: number;
+  /** 采样行触发时间偏移（秒，可负；覆盖轨级 offset）。 */
+  sampleOffsetSec?: number;
 }
 
 export interface DawTrack {
@@ -40,6 +42,8 @@ export interface DawTrack {
   plugin: string;
   program?: number;
   channel?: number;
+  /** 采样轨默认触发偏移（秒，可负；正=延后，负=提前）。 */
+  offsetSec?: number;
   rows: GridRow[];
 }
 

@@ -68,9 +68,13 @@ E2     |x=======x=======|
 ```text
 track samples
 role: sample
+offset: -0.05
 assets/kick.wav   |x.......x.......|
-assets/vocal.wav  |....4===========|
+assets/vocal.wav offset:-0.12  |....4===========|
 ```
+
+- 轨级 `offset:` / 行级 `offset:`：采样触发时间偏移（**秒**，可负）。负=提前，正=延后。
+- 行级覆盖轨级；网格编辑器在采样轨工具栏可改轨级偏移。
 
 格子：
 
