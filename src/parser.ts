@@ -1,3 +1,4 @@
+import { normalizeSamplePath } from "./dawPackage";
 import { DEFAULT_PLUGIN, TRACK_ROLES } from "./midi/gm";
 import { pitchToMidi } from "./pitch";
 import {
@@ -12,6 +13,9 @@ import { charToCell } from "./velocity";
 const HEADER_RE = /^([A-Za-z][A-Za-z0-9_-]{0,15})\s*:\s*(.*)$/;
 const TRACK_START_RE = /^track\s+([A-Za-z][A-Za-z0-9_-]{0,31})\s*$/i;
 const ROW_RE = /^([A-Za-z#][A-Za-z0-9#_^-]{0,15})(?:\s+|\s*(?=\|))(.*)$/;
+/** 采样行：相对包根路径，如 assets/kick.wav */
+const SAMPLE_ROW_RE =
+  /^([A-Za-z0-9_./+-]+\.(?:wav|ogg|mp3|flac|aiff|aif))(?:\s+|\s*(?=\|))(.*)$/i;
 
 function cellKind(char: string, warnings: ParseWarning[], line: number): CellKind {
   const cell = charToCell(char);
@@ -64,6 +68,7 @@ function inferRole(name: string): TrackRole {
   if (lower.includes("wood") || lower.includes("flute") || lower.includes("sax") || lower.includes("clarinet")) {
     return "woodwind";
   }
+  if (lower.includes("sample") || lower.includes("audio") || lower === "sfx") return "sample";
   if (lower.includes("pad") || lower.includes("synth")) return "pad";
   return "keys";
 }
@@ -167,7 +172,8 @@ export function parseSession(text: string): Session {
       return;
     }
 
-    const row = line.match(ROW_RE);
+    const sampleRow = line.match(SAMPLE_ROW_RE);
+    const row = sampleRow ?? line.match(ROW_RE);
     if (!row) {
       warnings.push({ message: "无法解析此行", line: lineIndex });
       return;
@@ -175,9 +181,13 @@ export function parseSession(text: string): Session {
     if (!current) {
       // Legacy single-block: invent a drums track for drum-like rows, else keys.
       const id = row[1];
-      const role = pitchToMidi(id) !== null ? "keys" : "drums";
+      const role = sampleRow
+        ? "sample"
+        : pitchToMidi(id) !== null
+          ? "keys"
+          : "drums";
       current = {
-        name: role === "drums" ? "drums" : "keys",
+        name: role === "drums" ? "drums" : role === "sample" ? "samples" : "keys",
         role,
         plugin: DEFAULT_PLUGIN[role],
         rows: [],
@@ -185,7 +195,13 @@ export function parseSession(text: string): Session {
       tracks.push(current);
       inTracks = true;
     }
-    const id = row[1];
+    const id = sampleRow || current.role === "sample"
+      ? normalizeSamplePath(row[1])
+      : row[1];
+    if (sampleRow && current.role !== "sample") {
+      current.role = "sample";
+      current.plugin = DEFAULT_PLUGIN.sample;
+    }
     const cells = parseGrid(row[2].trim(), stepsPerBar, warnings, lineIndex);
     const existing = current.rows.findIndex((item) => item.id.toLowerCase() === id.toLowerCase());
     const gridRow = { id, cells, lineIndex };

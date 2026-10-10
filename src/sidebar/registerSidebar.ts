@@ -1,5 +1,6 @@
 import * as path from "path";
 import * as vscode from "vscode";
+import { convertTextDawToPackage, isDawPackageFile } from "../dawPackage";
 import {
   assertLibraryMove,
   createLibraryFolder,
@@ -13,6 +14,7 @@ import {
   sanitizeFolderSegment,
   sanitizeScoreName,
 } from "../library";
+import { ensurePackageEntry } from "../packageCache";
 import { emptyTemplate } from "../serialize";
 import { GRID_VIEW_TYPE } from "../gridEditor/DawGridEditorProvider";
 import { CreatorProvider } from "./creatorProvider";
@@ -83,8 +85,38 @@ export function registerSidebar(
   };
 
   const openScore = async (value: unknown): Promise<void> => {
+    const ref = asPlaylistRef(value);
+    if (ref?.kind === "package") {
+      void vscode.window.showInformationMessage(
+        "DAW 包不能直接打开，请展开后打开内部的 index.daw 或其它文件。",
+      );
+      return;
+    }
+    if (ref?.kind === "packageFolder") {
+      return;
+    }
+    if (ref?.kind === "packageFile" && ref.packagePath && ref.entryPath) {
+      try {
+        const materialized = await ensurePackageEntry(ref.packagePath, ref.entryPath);
+        const uri = vscode.Uri.file(materialized);
+        if (ref.entryPath.toLowerCase().endsWith(".daw")) {
+          await vscode.commands.executeCommand("vscode.openWith", uri, GRID_VIEW_TYPE);
+        } else {
+          await vscode.commands.executeCommand("vscode.open", uri);
+        }
+      } catch (error) {
+        void vscode.window.showErrorMessage(`打开包内文件失败：${(error as Error).message}`);
+      }
+      return;
+    }
     const target = itemPath(value);
     if (!target) return;
+    if (await isDawPackageFile(target)) {
+      void vscode.window.showInformationMessage(
+        "DAW 包不能直接打开，请在播放列表展开后打开 index.daw。",
+      );
+      return;
+    }
     await vscode.commands.executeCommand(
       "vscode.openWith",
       vscode.Uri.file(target),
@@ -219,6 +251,32 @@ export function registerSidebar(
       playlist.refresh();
     } catch (error) {
       void vscode.window.showErrorMessage(`删除失败：${(error as Error).message}`);
+    }
+  });
+  register("vsDaw.convertToPackage", async (item: unknown) => {
+    const target = itemPath(item);
+    if (!target) return;
+    if (await isDawPackageFile(target)) {
+      void vscode.window.showInformationMessage("已经是 DAW 包，可展开后编辑 index.daw / assets。");
+      return;
+    }
+    const name = path.basename(target);
+    const answer = await vscode.window.showWarningMessage(
+      `将「${name}」转为采样包？\n原文本会写入包内 index.daw，并创建 assets/ 目录（同级已有 assets/ 会一并打入）。此操作会替换该文件。`,
+      { modal: true },
+      "转为采样包",
+    );
+    if (answer !== "转为采样包") return;
+    try {
+      const { copiedAssets } = await convertTextDawToPackage(target);
+      playlist.refresh();
+      void vscode.window.showInformationMessage(
+        copiedAssets > 0
+          ? `已转为 DAW 包，并打入 ${copiedAssets} 个 assets 文件。展开后可打开 index.daw。`
+          : "已转为 DAW 包。展开后可打开 index.daw，并把采样放进 assets/。",
+      );
+    } catch (error) {
+      void vscode.window.showErrorMessage(`转换失败：${(error as Error).message}`);
     }
   });
   register("vsDaw.createLibraryFolder", (item?: unknown) => {

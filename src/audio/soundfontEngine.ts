@@ -7,7 +7,11 @@ import {
   SPESSA_BUFSIZE,
 } from "spessasynth_core";
 import { encodeMidi } from "../midi/encode";
+import { midiNotesOnly } from "../schedule";
 import { Session, TimedNote } from "../types";
+import { decodeWavPcm, resampleToStereo } from "./wavDecode";
+
+export type SampleResolver = (samplePath: string) => Promise<Uint8Array | undefined>;
 
 export interface AudioContextLike {
   currentTime: number;
@@ -52,6 +56,51 @@ function padHoldSec(channel: number, program: number): number {
   if (channel === 9) return 0.2;
   if (program >= 32 && program <= 39) return 1.0;
   return 0.8;
+}
+
+function growPcm(
+  pcm: { left: Float32Array; right: Float32Array },
+  needed: number,
+): void {
+  if (pcm.left.length >= needed) return;
+  const left = new Float32Array(needed);
+  const right = new Float32Array(needed);
+  left.set(pcm.left);
+  right.set(pcm.right);
+  pcm.left = left;
+  pcm.right = right;
+}
+
+async function mixSampleNotes(
+  pcm: { left: Float32Array; right: Float32Array },
+  notes: TimedNote[],
+  sampleRate: number,
+  resolveSample: SampleResolver,
+): Promise<void> {
+  const cache = new Map<string, { left: Float32Array; right: Float32Array }>();
+  for (const note of notes) {
+    const samplePath = note.samplePath;
+    if (!samplePath) continue;
+    let stereo = cache.get(samplePath);
+    if (!stereo) {
+      const bytes = await resolveSample(samplePath);
+      if (!bytes) continue;
+      try {
+        const decoded = decodeWavPcm(bytes);
+        stereo = resampleToStereo(decoded.frames, decoded.sampleRate, sampleRate);
+      } catch {
+        continue;
+      }
+      cache.set(samplePath, stereo);
+    }
+    const gain = Math.max(0, Math.min(1, note.velocity / 127));
+    const start = Math.max(0, Math.floor(note.timeSec * sampleRate));
+    growPcm(pcm, start + stereo.left.length);
+    for (let i = 0; i < stereo.left.length; i += 1) {
+      pcm.left[start + i] += stereo.left[i] * gain;
+      pcm.right[start + i] += stereo.right[i] * gain;
+    }
+  }
 }
 
 async function renderMidiPcm(
@@ -175,10 +224,27 @@ export class SoundfontEngine {
     return Boolean(this.pcm);
   }
 
-  async load(session: Session, notes: TimedNote[], durationSec: number, loop: boolean): Promise<void> {
+  async load(
+    session: Session,
+    notes: TimedNote[],
+    durationSec: number,
+    loop: boolean,
+    resolveSample?: SampleResolver,
+  ): Promise<void> {
     await this.warmUp();
-    const bytes = encodeMidi(session, notes);
-    this.pcm = await renderMidiPcm(bytes, this.options.sf2Path, this.sampleRate);
+    const midiNotes = midiNotesOnly(notes);
+    const sampleNotes = notes.filter((note) => note.samplePath);
+    const bytes = encodeMidi(session, midiNotes);
+    const pcm = midiNotes.length > 0
+      ? await renderMidiPcm(bytes, this.options.sf2Path, this.sampleRate)
+      : {
+        left: new Float32Array(Math.max(1, Math.ceil(this.sampleRate * (durationSec + 0.25)))),
+        right: new Float32Array(Math.max(1, Math.ceil(this.sampleRate * (durationSec + 0.25)))),
+      };
+    if (sampleNotes.length && resolveSample) {
+      await mixSampleNotes(pcm, sampleNotes, this.sampleRate, resolveSample);
+    }
+    this.pcm = pcm;
     this.audioBuffer = undefined;
     this.durationSec = durationSec;
     this.loop = loop;

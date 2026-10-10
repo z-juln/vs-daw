@@ -1,7 +1,11 @@
-import { SoundfontEngine, type AudioContextLike } from "./audio/soundfontEngine";
+import {
+  SoundfontEngine,
+  type AudioContextLike,
+  type SampleResolver,
+} from "./audio/soundfontEngine";
 import { Session, TimedNote } from "./types";
 
-export type { AudioContextLike };
+export type { AudioContextLike, SampleResolver };
 
 /** Thin facade used by extension.ts. */
 export class DawEngine {
@@ -38,8 +42,9 @@ export class DawEngine {
     notes: TimedNote[],
     durationSec: number,
     loop: boolean,
+    resolveSample?: SampleResolver,
   ): Promise<void> {
-    await this.inner.load(session, notes, durationSec, loop);
+    await this.inner.load(session, notes, durationSec, loop, resolveSample);
   }
 
   play(fromSec: number): void {

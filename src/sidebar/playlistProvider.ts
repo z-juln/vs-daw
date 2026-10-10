@@ -1,5 +1,11 @@
 import * as vscode from "vscode";
 import {
+  isDawPackageFile,
+  listPackageChildren,
+  loadPackageEntries,
+  PACKAGE_INDEX,
+} from "../dawPackage";
+import {
   createLibraryFolder,
   createLibraryScore,
   listLibraryDirectory,
@@ -16,20 +22,34 @@ import {
 
 export type { PlaylistViewState } from "./scoreContext";
 
-export type PlaylistNodeKind = "folder" | "score";
+export type PlaylistNodeKind =
+  | "folder"
+  | "score"
+  | "package"
+  | "packageFolder"
+  | "packageFile";
 
 /** 命令参数：Webview 可序列化引用。 */
 export interface PlaylistRef {
   kind: PlaylistNodeKind;
   relativePath: string;
   absolutePath: string;
+  /** DAW 包（zip）绝对路径 */
+  packagePath?: string;
+  /** 包内相对路径，如 index.daw / assets/kick.wav */
+  entryPath?: string;
 }
+
+const PACKAGE_KINDS: PlaylistNodeKind[] = ["package", "packageFolder", "packageFile"];
 
 export function isPlaylistRef(value: unknown): value is PlaylistRef {
   if (!value || typeof value !== "object") return false;
   const item = value as PlaylistRef;
+  const kindOk = item.kind === "folder"
+    || item.kind === "score"
+    || PACKAGE_KINDS.includes(item.kind);
   return (
-    (item.kind === "folder" || item.kind === "score")
+    kindOk
     && typeof item.relativePath === "string"
     && typeof item.absolutePath === "string"
   );
@@ -38,19 +58,31 @@ export function isPlaylistRef(value: unknown): value is PlaylistRef {
 export function asPlaylistRef(value: unknown): PlaylistRef | undefined {
   if (isPlaylistRef(value)) return value;
   if (!value || typeof value !== "object") return undefined;
-  const item = value as { relativePath?: string; absolutePath?: string };
+  const item = value as PlaylistRef;
   if (typeof item.relativePath !== "string" || typeof item.absolutePath !== "string") {
     return undefined;
   }
   const kind: PlaylistNodeKind = item.relativePath.toLowerCase().endsWith(".daw")
     ? "score"
     : "folder";
-  return { kind, relativePath: item.relativePath, absolutePath: item.absolutePath };
+  return {
+    kind,
+    relativePath: item.relativePath,
+    absolutePath: item.absolutePath,
+    packagePath: typeof item.packagePath === "string" ? item.packagePath : undefined,
+    entryPath: typeof item.entryPath === "string" ? item.entryPath : undefined,
+  };
+}
+
+export function packageEntryKey(packageRelativePath: string, entryPath: string): string {
+  return `${packageRelativePath}!/${entryPath}`;
 }
 
 export function dropTargetFolder(target: PlaylistRef | undefined): string {
   if (!target) return "";
   if (target.kind === "folder") return target.relativePath;
+  const bang = target.relativePath.indexOf("!/");
+  if (bang >= 0) return parentOfPath(target.relativePath.slice(0, bang));
   return parentOfPath(target.relativePath);
 }
 
@@ -67,7 +99,13 @@ interface TreeNode {
   absolutePath: string;
   playing: boolean;
   playState: string;
+  packagePath?: string;
+  entryPath?: string;
   children?: TreeNode[];
+  /** 可展开（目录或 DAW 包） */
+  expandable?: boolean;
+  /** 双击/回车是否允许打开 */
+  openable?: boolean;
 }
 
 type InlineDraft =
@@ -168,6 +206,7 @@ export class PlaylistProvider implements vscode.WebviewViewProvider {
   }
 
   beginRename(ref: PlaylistRef): void {
+    if (ref.kind === "packageFolder" || ref.kind === "packageFile") return;
     const name = ref.relativePath.split("/").pop() ?? ref.relativePath;
     const seed = ref.kind === "folder" ? name : name.replace(/\.daw$/i, "");
     const parent = parentOfPath(ref.relativePath);
@@ -260,10 +299,31 @@ export class PlaylistProvider implements vscode.WebviewViewProvider {
         absolutePath: folder.absolutePath,
         playing: false,
         playState: "vsDaw.folder",
+        expandable: true,
+        openable: false,
         children,
       });
     }
     for (const score of listing.scores) {
+      const isPackage = await isDawPackageFile(score.absolutePath);
+      if (isPackage) {
+        const children = this.expanded.has(score.relativePath)
+          ? await this.buildPackageTree(score.relativePath, score.absolutePath, "")
+          : undefined;
+        nodes.push({
+          kind: "package",
+          name: score.name,
+          relativePath: score.relativePath,
+          absolutePath: score.absolutePath,
+          packagePath: score.absolutePath,
+          playing: isPlayingScore(score.absolutePath, state),
+          playState: scoreContextValue(score.absolutePath, state),
+          expandable: true,
+          openable: false,
+          children,
+        });
+        continue;
+      }
       nodes.push({
         kind: "score",
         name: score.name,
@@ -271,6 +331,62 @@ export class PlaylistProvider implements vscode.WebviewViewProvider {
         absolutePath: score.absolutePath,
         playing: isPlayingScore(score.absolutePath, state),
         playState: scoreContextValue(score.absolutePath, state),
+        expandable: false,
+        openable: true,
+      });
+    }
+    return nodes;
+  }
+
+  private async buildPackageTree(
+    packageRelativePath: string,
+    packageAbsolutePath: string,
+    entryDir: string,
+  ): Promise<TreeNode[]> {
+    const files = await loadPackageEntries(packageAbsolutePath);
+    const children = listPackageChildren(files, entryDir);
+    const nodes: TreeNode[] = [];
+    for (const child of children) {
+      const name = child.path.split("/").pop() ?? child.path;
+      const relativePath = packageEntryKey(packageRelativePath, child.path);
+      if (child.directory) {
+        const nested = this.expanded.has(relativePath)
+          ? await this.buildPackageTree(packageRelativePath, packageAbsolutePath, child.path)
+          : undefined;
+        nodes.push({
+          kind: "packageFolder",
+          name,
+          relativePath,
+          absolutePath: packageAbsolutePath,
+          packagePath: packageAbsolutePath,
+          entryPath: child.path,
+          playing: false,
+          playState: "vsDaw.folder",
+          expandable: true,
+          openable: false,
+          children: nested,
+        });
+      } else {
+        nodes.push({
+          kind: "packageFile",
+          name,
+          relativePath,
+          absolutePath: packageAbsolutePath,
+          packagePath: packageAbsolutePath,
+          entryPath: child.path,
+          playing: false,
+          playState: "vsDaw.packageFile",
+          expandable: false,
+          openable: true,
+        });
+      }
+    }
+    // Prefer index.daw first visually among root files
+    if (!entryDir) {
+      nodes.sort((a, b) => {
+        if (a.entryPath === PACKAGE_INDEX) return -1;
+        if (b.entryPath === PACKAGE_INDEX) return 1;
+        return 0;
       });
     }
     return nodes;
@@ -512,7 +628,22 @@ function showMenu(x, y, items) {
 }
 
 function refOf(node) {
-  return { kind: node.kind, relativePath: node.relativePath, absolutePath: node.absolutePath };
+  return {
+    kind: node.kind,
+    relativePath: node.relativePath,
+    absolutePath: node.absolutePath,
+    packagePath: node.packagePath,
+    entryPath: node.entryPath,
+  };
+}
+
+function isExpandable(node) {
+  return Boolean(node.expandable || node.kind === 'folder' || node.kind === 'package' || node.kind === 'packageFolder');
+}
+
+function isOpenable(node) {
+  if (node.openable === false) return false;
+  return node.kind === 'score' || node.kind === 'packageFile';
 }
 
 function folderMenus(node) {
@@ -534,11 +665,46 @@ function scoreMenus(node) {
   }
   items.push(
     { label: '打开', run: () => cmd('vsDaw.openLibraryScore', refOf(node)) },
+    { label: '转为采样包…', run: () => cmd('vsDaw.convertToPackage', refOf(node)) },
     '-',
     { label: '重命名', run: () => cmd('vsDaw.renameLibraryItem', refOf(node)) },
     { label: '删除', run: () => cmd('vsDaw.deleteLibraryScore', refOf(node)) },
   );
   return items;
+}
+
+function packageMenus(node) {
+  const items = [];
+  if (node.playState === 'vsDaw.scorePlaying') {
+    items.push({ label: '暂停', run: () => cmd('vsDaw.pauseLibraryScore', refOf(node)) });
+  } else {
+    items.push({ label: '播放', run: () => cmd('vsDaw.playLibraryScore', refOf(node)) });
+  }
+  items.push(
+    { label: '展开/折叠', run: () => vscode.postMessage({ type: 'toggle', path: node.relativePath }) },
+    '-',
+    { label: '重命名', run: () => cmd('vsDaw.renameLibraryItem', refOf(node)) },
+    { label: '删除', run: () => cmd('vsDaw.deleteLibraryScore', refOf(node)) },
+  );
+  return items;
+}
+
+function packageEntryMenus(node) {
+  if (node.kind === 'packageFolder') {
+    return [
+      { label: '展开/折叠', run: () => vscode.postMessage({ type: 'toggle', path: node.relativePath }) },
+    ];
+  }
+  return [
+    { label: '打开', run: () => cmd('vsDaw.openLibraryScore', refOf(node)) },
+  ];
+}
+
+function menusFor(node) {
+  if (node.kind === 'folder') return folderMenus(node);
+  if (node.kind === 'package') return packageMenus(node);
+  if (node.kind === 'packageFolder' || node.kind === 'packageFile') return packageEntryMenus(node);
+  return scoreMenus(node);
 }
 
 function blankMenus() {
@@ -609,21 +775,24 @@ function renderEditRow(depth, kind, seed) {
 function renderNode(node, depth) {
   const frag = document.createDocumentFragment();
   const renaming = draft && draft.mode === 'rename' && draft.path === node.relativePath;
+  const expandable = isExpandable(node);
 
   if (renaming) {
-    frag.appendChild(renderEditRow(depth, node.kind, draft.seed || ''));
+    frag.appendChild(renderEditRow(depth, node.kind === 'package' ? 'score' : node.kind, draft.seed || ''));
   } else {
     const row = document.createElement('div');
     row.className = 'row';
     row.style.paddingLeft = rowPad(depth) + 'px';
-    row.draggable = true;
+    row.draggable = node.kind === 'folder' || node.kind === 'score' || node.kind === 'package';
     row.dataset.path = node.relativePath;
     row.dataset.kind = node.kind;
-    row.title = node.name;
+    row.title = node.kind === 'package'
+      ? node.name + '（DAW 包，请展开后打开 index.daw）'
+      : node.name;
 
     const twist = document.createElement('span');
-    twist.className = 'twist' + (node.kind === 'folder' ? '' : ' empty');
-    if (node.kind === 'folder') {
+    twist.className = 'twist' + (expandable ? '' : ' empty');
+    if (expandable) {
       const open = expanded.has(node.relativePath);
       twist.appendChild(codicon(open ? 'chevron-down' : 'chevron-right'));
       twist.onclick = (e) => {
@@ -634,9 +803,14 @@ function renderNode(node, depth) {
 
     const icon = document.createElement('span');
     icon.className = 'icon';
-    if (node.kind === 'folder') {
-      const open = expanded.has(node.relativePath);
+    const open = expanded.has(node.relativePath);
+    if (node.kind === 'folder' || node.kind === 'packageFolder') {
       icon.appendChild(codicon(open ? 'folder-opened' : 'folder', 'icon-folder'));
+    } else if (node.kind === 'package') {
+      icon.appendChild(codicon(open ? 'file-zip' : 'file-zip', 'icon-music'));
+    } else if (node.kind === 'packageFile') {
+      const isDaw = (node.entryPath || '').toLowerCase().endsWith('.daw');
+      icon.appendChild(codicon(isDaw ? 'music' : 'file', 'icon-music'));
     } else {
       icon.appendChild(codicon('music', 'icon-music'));
     }
@@ -644,11 +818,16 @@ function renderNode(node, depth) {
     const label = document.createElement('span');
     label.className = 'label';
     label.textContent = node.name;
-    label.title = node.name;
+    label.title = row.title;
     if (node.playing) {
       const desc = document.createElement('span');
       desc.className = 'desc';
       desc.textContent = '播放中';
+      label.appendChild(desc);
+    } else if (node.kind === 'package') {
+      const desc = document.createElement('span');
+      desc.className = 'desc';
+      desc.textContent = '包';
       label.appendChild(desc);
     }
 
@@ -657,7 +836,7 @@ function renderNode(node, depth) {
     row.appendChild(label);
     if (node.relativePath === selectedPath) row.classList.add('selected');
 
-    if (node.kind === 'score') {
+    if (node.kind === 'score' || node.kind === 'package') {
       const playing = node.playState === 'vsDaw.scorePlaying';
       const play = document.createElement('button');
       play.className = 'play' + (playing ? ' on' : '');
@@ -675,25 +854,30 @@ function renderNode(node, depth) {
     row.onclick = (e) => {
       e.stopPropagation();
       selectRow(node.relativePath, node.kind);
-      if (node.kind === 'folder') {
+      if (expandable) {
         vscode.postMessage({ type: 'toggle', path: node.relativePath });
       }
     };
     row.ondblclick = () => {
       selectRow(node.relativePath, node.kind);
-      if (node.kind === 'score') cmd('vsDaw.openLibraryScore', refOf(node));
+      if (isOpenable(node)) cmd('vsDaw.openLibraryScore', refOf(node));
     };
     row.oncontextmenu = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      showMenu(e.clientX, e.clientY, node.kind === 'folder' ? folderMenus(node) : scoreMenus(node));
+      showMenu(e.clientX, e.clientY, menusFor(node));
     };
     row.ondragstart = (e) => {
+      if (!(node.kind === 'folder' || node.kind === 'score' || node.kind === 'package')) {
+        e.preventDefault();
+        return;
+      }
       dragPaths = [node.relativePath];
       e.dataTransfer.setData('text/plain', node.relativePath);
       e.dataTransfer.effectAllowed = 'move';
     };
     row.ondragover = (e) => {
+      if (node.kind !== 'folder' && node.kind !== 'score' && node.kind !== 'package') return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       row.classList.add('drop-target');
@@ -715,7 +899,7 @@ function renderNode(node, depth) {
     frag.appendChild(row);
   }
 
-  if (node.kind === 'folder' && expanded.has(node.relativePath)) {
+  if (expandable && expanded.has(node.relativePath)) {
     const childDepth = depth + 1;
     const creatingHere = draft
       && (draft.mode === 'create-folder' || draft.mode === 'create-score')
@@ -771,8 +955,11 @@ function activateSelected() {
   if (draft) return;
   const node = nodeByPath.get(selectedPath);
   if (!node) return;
-  if (node.kind === 'folder') renameSelected();
-  else cmd('vsDaw.openLibraryScore', refOf(node));
+  if (isExpandable(node)) {
+    vscode.postMessage({ type: 'toggle', path: node.relativePath });
+    return;
+  }
+  if (isOpenable(node)) cmd('vsDaw.openLibraryScore', refOf(node));
 }
 
 rootEl.oncontextmenu = (e) => {

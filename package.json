@@ -1,7 +1,7 @@
 {
   "name": "vs-daw",
   "displayName": "VS DAW",
-  "description": "纯文本多轨 DAW：鼓/钢琴/吉他/贝斯/弦乐等、MIDI+SoundFont 播放",
+  "description": "纯文本/包格式多轨 DAW：GM 乐器与采样、MIDI+SoundFont 播放",
   "version": "1.0.5",
   "license": "MIT",
   "publisher": "vs-daw",
@@ -220,6 +220,10 @@
         "command": "vsDaw.deleteLibraryScore",
         "title": "VS DAW: 删除工程",
         "icon": "$(trash)"
+      },
+      {
+        "command": "vsDaw.convertToPackage",
+        "title": "VS DAW: 转为采样包"
       },
       {
         "command": "vsDaw.createLibraryFolder",
@@ -778,6 +782,7 @@
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.46-24",
+    "fflate": "^0.8.2",
     "node-web-audio-api": "^2.2.0",
     "spessasynth_core": "^4.3.22"
   },

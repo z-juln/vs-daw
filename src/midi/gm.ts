@@ -9,6 +9,7 @@ export const TRACK_ROLES: TrackRole[] = [
   "brass",
   "woodwind",
   "pad",
+  "sample",
 ];
 
 export const ROLE_LABEL_ZH: Record<TrackRole, string> = {
@@ -20,6 +21,7 @@ export const ROLE_LABEL_ZH: Record<TrackRole, string> = {
   brass: "铜管",
   woodwind: "木管",
   pad: "合成 Pad",
+  sample: "采样",
 };
 
 export const DEFAULT_PLUGIN: Record<TrackRole, string> = {
@@ -31,6 +33,7 @@ export const DEFAULT_PLUGIN: Record<TrackRole, string> = {
   brass: "brass.gm",
   woodwind: "woodwind.gm",
   pad: "pad.gm",
+  sample: "sample.file",
 };
 
 export const DEFAULT_PROGRAM: Record<TrackRole, number> = {
@@ -42,6 +45,7 @@ export const DEFAULT_PROGRAM: Record<TrackRole, number> = {
   brass: 61, // Brass Section
   woodwind: 73, // Flute
   pad: 89, // Warm Pad
+  sample: 0,
 };
 
 /** 0-based MIDI channels; drums use channel 10 → index 9. */
@@ -54,6 +58,7 @@ export const DEFAULT_CHANNEL: Record<TrackRole, number> = {
   brass: 4,
   woodwind: 5,
   pad: 6,
+  sample: 7,
 };
 
 /** Pad 默认八度（低排起始）。 */
@@ -66,6 +71,7 @@ export const DEFAULT_OCTAVE: Record<TrackRole, number> = {
   brass: 3,
   woodwind: 4,
   pad: 3,
+  sample: 4,
 };
 
 export const DRUM_TO_GM: Record<string, number> = {
@@ -97,5 +103,9 @@ export function roleFromProgram(program: number, channel: number): TrackRole {
 }
 
 export function isPitchRole(role: TrackRole): boolean {
-  return role !== "drums";
+  return role !== "drums" && role !== "sample";
+}
+
+export function isSampleRole(role: TrackRole): boolean {
+  return role === "sample";
 }

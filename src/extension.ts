@@ -1,6 +1,13 @@
+import { promises as fs } from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { getKeyMap, getLoop, getPadModeOnOpen, isDrumEditor } from "./config";
+import {
+  isDawPackageFile,
+  normalizeSamplePath,
+  readPackageAsset,
+  readPackageIndex,
+} from "./dawPackage";
 import { DawEngine } from "./engine";
 import {
   DEFAULT_CHANNEL,
@@ -16,6 +23,7 @@ import { decodeMidiToSession } from "./midi/decode";
 import { createNativeContext } from "./nativeContext";
 import { defaultLibraryRoot, ensureLibrary, readLibraryScore } from "./library";
 import { columnToStep } from "./mapper";
+import { packageForCacheFile, repackPackage } from "./packageCache";
 import { resolvePitchPad } from "./padLayout";
 import { PadMode } from "./padMode";
 import { parseSession } from "./parser";
@@ -27,7 +35,13 @@ import {
   PlayheadIndex,
 } from "./playhead";
 import { RecordingMode } from "./recordingMode";
-import { scheduleSession, scoreDurationSec, stepDurationSec } from "./schedule";
+import {
+  midiNotesOnly,
+  scheduleSession,
+  scoreDurationSec,
+  sessionHasSampleTracks,
+  stepDurationSec,
+} from "./schedule";
 import { emptyTemplate, formatScoreText, formatSessionText, writeHit } from "./serialize";
 import { registerSidebar, SidebarController } from "./sidebar/registerSidebar";
 import {
@@ -59,6 +73,8 @@ import { Session, TrackRole } from "./types";
 interface PlaybackSource {
   uri?: vscode.Uri;
   text: string;
+  /** 播放 DAW 包时指向 zip 绝对路径，用于解析 assets/。 */
+  packagePath?: string;
 }
 
 let engine: DawEngine | undefined;
@@ -112,11 +128,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let sidebar: SidebarController | undefined;
   const libraryRoot = defaultLibraryRoot();
 
-  const ROLE_PICK: { role: TrackRole; label: string; name: string }[] = TRACK_ROLES.map((role) => ({
-    role,
-    label: ROLE_LABEL_ZH[role],
-    name: role === "keys" ? "piano" : role,
-  }));
+  const ROLE_PICK: { role: TrackRole; label: string; name: string }[] = TRACK_ROLES
+    .filter((role) => role !== "sample")
+    .map((role) => ({
+      role,
+      label: ROLE_LABEL_ZH[role],
+      name: role === "keys" ? "piano" : role,
+    }));
+
+  const resolveSampleBytes = (next: PlaybackSource) =>
+    async (samplePath: string): Promise<Uint8Array | undefined> => {
+      const normalized = normalizeSamplePath(samplePath);
+      if (!normalized) return undefined;
+      const tryRead = async (filePath: string): Promise<Uint8Array | undefined> => {
+        try {
+          return await fs.readFile(filePath);
+        } catch {
+          return undefined;
+        }
+      };
+      if (next.packagePath) {
+        try {
+          return await readPackageAsset(next.packagePath, normalized);
+        } catch {
+          return undefined;
+        }
+      }
+      if (next.uri?.scheme === "file") {
+        const pkg = packageForCacheFile(next.uri.fsPath);
+        if (pkg) {
+          try {
+            return await readPackageAsset(pkg, normalized);
+          } catch {
+            return undefined;
+          }
+        }
+        return tryRead(path.join(path.dirname(next.uri.fsPath), ...normalized.split("/")));
+      }
+      return undefined;
+    };
 
   const applyRoleOctave = (role: TrackRole): void => {
     if (role === "drums") return;
@@ -403,7 +453,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     transport = { ...transport, loop: getLoop() };
     const notes = scheduleSession(session);
     try {
-      await audio.loadSession(session, notes, currentDuration, transport.loop);
+      await audio.loadSession(
+        session,
+        notes,
+        currentDuration,
+        transport.loop,
+        resolveSampleBytes(next),
+      );
     } catch (error) {
       void vscode.window.showErrorMessage(`加载音频失败：${(error as Error).message}`);
       return false;
@@ -683,8 +739,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const seekLearnStep = (stepIndex: number): void => {
     const stepSec = learnStepSec;
     if (!(stepSec > 0)) return;
-    const document = (learnDocumentUri
-      ? vscode.workspace.textDocuments.find((item) => item.uri.toString() === learnDocumentUri.toString())
+    const learnUri = learnDocumentUri;
+    const document = (learnUri
+      ? vscode.workspace.textDocuments.find((item) => item.uri.toString() === learnUri.toString())
       : undefined)
       ?? getActiveGridDocument()
       ?? activeDawDocument();
@@ -1005,7 +1062,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
     const session = parseSession(text);
-    const bytes = encodeMidi(session, scheduleSession(session));
+    const notes = scheduleSession(session);
+    if (sessionHasSampleTracks(session)) {
+      const answer = await vscode.window.showWarningMessage(
+        "采样只能留在 .daw 包里，标准 MIDI 无法携带采样音频。确认后将跳过采样轨并导出其余轨。",
+        { modal: true },
+        "跳过采样并导出",
+      );
+      if (answer !== "跳过采样并导出") return;
+    }
+    const bytes = encodeMidi(session, midiNotesOnly(notes));
     const uri = await vscode.window.showSaveDialog({
       filters: { MIDI: ["mid", "midi"] },
       defaultUri: source?.uri
@@ -1016,6 +1082,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await vscode.workspace.fs.writeFile(uri, bytes);
     void vscode.window.showInformationMessage(`已导出 ${path.basename(uri.fsPath)}`);
   });
+
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(async (document) => {
+    const pkg = packageForCacheFile(document.uri.fsPath);
+    if (!pkg) return;
+    try {
+      await repackPackage(pkg);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`写回 DAW 包失败：${(error as Error).message}`);
+    }
+  }));
   register("vsDaw.importMidi", async () => {
     const picked = await vscode.window.showOpenDialog({
       canSelectMany: false,
@@ -1125,18 +1201,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       sidebar?.refreshPlaylist();
     },
-    getPlaylistState: () => ({
-      currentPath: source?.uri?.fsPath ? path.normalize(source.uri.fsPath) : undefined,
-      status: transport.status,
-    }),
+    getPlaylistState: () => {
+      let currentPath = source?.packagePath
+        ?? (source?.uri?.fsPath ? path.normalize(source.uri.fsPath) : undefined);
+      if (currentPath) {
+        const pkg = packageForCacheFile(currentPath);
+        if (pkg) currentPath = pkg;
+      }
+      return { currentPath, status: transport.status };
+    },
     playScoreFile: async (absolutePath) => {
-      const current = source?.uri?.fsPath;
+      const current = source?.packagePath ?? source?.uri?.fsPath;
       if (
         current
         && path.normalize(current) === path.normalize(absolutePath)
         && transport.status === "paused"
       ) {
         await applyTransport({ type: "play" });
+        return;
+      }
+      if (await isDawPackageFile(absolutePath)) {
+        const text = await readPackageIndex(absolutePath);
+        await applyTransport(
+          { type: "restart" },
+          { uri: vscode.Uri.file(absolutePath), text, packagePath: absolutePath },
+        );
         return;
       }
       const text = await readLibraryScore(libraryRoot, absolutePath);
@@ -1146,7 +1235,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
     },
     pauseScoreFile: async (absolutePath) => {
-      const current = source?.uri?.fsPath;
+      const current = source?.packagePath ?? source?.uri?.fsPath;
       if (
         !current
         || path.normalize(current) !== path.normalize(absolutePath)

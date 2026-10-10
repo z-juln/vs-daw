@@ -1,4 +1,4 @@
-import { scheduleSession } from "../schedule";
+import { midiNotesOnly, scheduleSession } from "../schedule";
 import { Session, TimedNote } from "../types";
 
 const TPQ = 480;
@@ -49,25 +49,28 @@ function trackBytes(events: { tick: number; data: number[] }[]): Buffer {
   return Buffer.concat([header, Buffer.from(body)]);
 }
 
-/** Encode session notes to standard Type-1 SMF bytes. */
+/** Encode session notes to standard Type-1 SMF bytes（自动跳过采样轨/采样事件）。 */
 export function encodeMidi(
   session: Session,
   notes: TimedNote[] = scheduleSession(session),
 ): Uint8Array {
+  const midiNotes = midiNotesOnly(notes);
   const tempo = Math.round(60_000_000 / session.bpm);
   const conductor = trackBytes([
     { tick: 0, data: [0xff, 0x51, 0x03, (tempo >> 16) & 0xff, (tempo >> 8) & 0xff, tempo & 0xff] },
   ]);
 
   const byTrack = new Map<string, TimedNote[]>();
-  for (const note of notes) {
+  for (const note of midiNotes) {
     const list = byTrack.get(note.trackName) ?? [];
     list.push(note);
     byTrack.set(note.trackName, list);
   }
 
-  // Preserve session track order even if empty
-  const order = session.tracks.map((track) => track.name);
+  // Preserve session track order even if empty（跳过采样轨）
+  const order = session.tracks
+    .filter((track) => track.role !== "sample")
+    .map((track) => track.name);
   for (const name of byTrack.keys()) {
     if (!order.includes(name)) order.push(name);
   }

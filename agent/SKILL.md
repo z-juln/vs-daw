@@ -1,13 +1,25 @@
 ---
 name: writing-vs-daw-scores
-description: Use when creating or editing VS DAW `.daw` multi-track session files, drum/keys/guitar/bass/strings/brass/woodwind/pad grids, or MIDI import/export.
+description: Use when creating or editing VS DAW `.daw` multi-track session files (text or zip package), sample tracks, drum/keys/guitar/bass/strings/brass/woodwind/pad grids, or MIDI import/export.
 ---
 
 # 编写 VS DAW 工程
 
 ## 核心格式
 
-`.daw` 是 UTF-8 纯文本多轨工程：先写全局头，再按 `track` 分段；每段内每行是一个音高或鼓件，横向每个字符是一个 step，`|` 是小节线且不占 step。
+`.daw` 可以是：
+
+1. **纯文本**：UTF-8 多轨工程。
+2. **DAW 包**：zip（仍用 `.daw` 后缀），结构固定为：
+
+```text
+song.daw          # zip
+├── index.daw     # 必选：文本工程
+└── assets/       # 采样与其它资源
+    └── kick.wav
+```
+
+文本工程先写全局头，再按 `track` 分段；每段内每行是一个音高、鼓件或采样路径，横向每个字符是一个 step，`|` 是小节线且不占 step。
 
 ```text
 # vs-daw 1
@@ -47,9 +59,18 @@ E2     |x=======x=======|
 轨头：
 
 - `track <name>`：开始一条轨。
-- `role`: `drums` | `keys` | `guitar` | `bass` | `strings` | `brass` | `woodwind` | `pad`。
-- `plugin`: 可选提示（如 `drum.gm` / `keys.gm` / `strings.gm`）。
-- `program`: GM 音色号（鼓轨忽略；钢琴 0、吉他 24、贝斯 32、弦乐合奏 48、铜管组 61、长笛 73、Warm Pad 89 等）。均来自内置 `gm.sf3`，换乐器不增大插件体积。
+- `role`: `drums` | `keys` | `guitar` | `bass` | `strings` | `brass` | `woodwind` | `pad` | `sample`。
+- `plugin`: 可选提示（如 `drum.gm` / `keys.gm` / `strings.gm` / `sample.file`）。
+- `program`: GM 音色号（鼓轨 / 采样轨忽略；钢琴 0、吉他 24、贝斯 32、弦乐合奏 48、铜管组 61、长笛 73、Warm Pad 89 等）。GM 音色来自内置 `gm.sf3`。
+
+采样轨示例（路径相对包根；纯文本工程则相对 `.daw` 所在目录）：
+
+```text
+track samples
+role: sample
+assets/kick.wav   |x.......x.......|
+assets/vocal.wav  |....4===========|
+```
 
 格子：
 
@@ -73,9 +94,9 @@ E2     |x=======x=======|
 
 ## 音频与 MIDI
 
-- 播放：工程 → 内存 MIDI → SoundFont（GM SF3）合成。
-- 导出：`VS DAW: 导出 MIDI`。
-- 导入：`VS DAW: 导入 MIDI` → 写入 `~/.vs-daw`。
+- 播放：GM 轨 → 内存 MIDI → SoundFont（GM SF3）；`role: sample` → 触发 `assets/` 等采样文件并混音。
+- 导出：`VS DAW: 导出 MIDI`。若含采样轨，会提示「采样只能留在 .daw 包里」，确认后跳过采样轨导出。
+- 导入：`VS DAW: 导入 MIDI` → 写入 `~/.vs-daw`（纯文本）。
 
 ## 常见错误
 

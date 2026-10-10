@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
-import { applyCellEdit } from "./cellEdit";
-import { applyHeaderFields, sessionToView } from "./sessionView";
+import { isDawPackageFile, PACKAGE_INDEX } from "../dawPackage";
 import { parseSession } from "../parser";
 import { formatSessionText } from "../serialize";
+import { applyCellEdit } from "./cellEdit";
+import { applyHeaderFields, sessionToView } from "./sessionView";
 
 export const GRID_VIEW_TYPE = "vsDaw.gridEditor";
 
@@ -123,6 +124,14 @@ export class DawGridEditorProvider implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel,
   ): Promise<void> {
+    if (document.uri.scheme === "file" && await isDawPackageFile(document.uri.fsPath)) {
+      webviewPanel.webview.html = `<!DOCTYPE html><html><body style="font-family:var(--vscode-font-family);padding:16px;color:var(--vscode-foreground)">
+        <p>这是 DAW 包（zip），不能直接打开。</p>
+        <p>请在播放列表中展开该包，再打开内部的 <code>${PACKAGE_INDEX}</code> 或其它文件。</p>
+      </body></html>`;
+      return;
+    }
+
     const panel: GridPanel = {
       document,
       webview: webviewPanel.webview,
