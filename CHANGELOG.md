@@ -2,6 +2,14 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.5] - 2026-10-10
+
+### Added
+
+- 轨角色扩展：`strings` / `brass` / `woodwind` / `pad`（弦乐、铜管、木管、合成 Pad）
+- 空白模板默认含弦乐轨；侧边栏与轨头可切换新角色
+- 音色仍来自内置 `gm.sf3`，换乐器不增大插件体积
+
 ## [1.0.4] - 2026-10-10
 
 ### Fixed
