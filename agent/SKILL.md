@@ -1,6 +1,6 @@
 ---
 name: writing-vs-daw-scores
-description: Use when creating or editing VS DAW `.daw` multi-track session files (text or zip package), sample tracks, drum/keys/guitar/bass/strings/brass/woodwind/pad grids, or MIDI import/export.
+description: Use when creating or editing VS DAW `.daw` multi-track session files (text or zip package), sample tracks, drum/keys/guitar/bass/strings/brass/woodwind/lead/pad/ethnic/fx grids, or MIDI import/export.
 ---
 
 # 编写 VS DAW 工程
@@ -22,7 +22,7 @@ song.daw          # zip
 文本工程先写全局头，再按 `track` 分段；每段内每行是一个音高、鼓件或采样路径，横向每个字符是一个 step，`|` 是小节线且不占 step。
 
 ```text
-# vs-daw 1
+# vs-daw 2
 bpm: 120
 meter: 4/4
 steps: 16
@@ -36,14 +36,14 @@ ch     |x.x.x.x.x.x.x.x.|
 
 track piano
 role: keys
-program: 0
+program: 1
 C4     |x===........x===|
 E4     |....x===........|
 G4     |........x=======|
 
 track bass
 role: bass
-program: 32
+program: 33
 E2     |x=======x=======|
 ```
 
@@ -51,6 +51,7 @@ E2     |x=======x=======|
 
 文件头：
 
+- `# vs-daw 2`：当前格式版本（新文件请写 **2**）。
 - `bpm`: 每分钟四分音符数，默认 120。
 - `meter`: 拍号，默认 `4/4`。
 - `steps`: 每小节格数，默认 16。
@@ -59,9 +60,25 @@ E2     |x=======x=======|
 轨头：
 
 - `track <name>`：开始一条轨。
-- `role`: `drums` | `keys` | `guitar` | `bass` | `strings` | `brass` | `woodwind` | `pad` | `sample`。
-- `plugin`: 可选提示（如 `drum.gm` / `keys.gm` / `strings.gm` / `sample.file`）。
-- `program`: GM 音色号（鼓轨 / 采样轨忽略；钢琴 0、吉他 24、贝斯 32、弦乐合奏 48、铜管组 61、长笛 73、Warm Pad 89 等）。GM 音色来自内置 `gm.sf3`。
+- `role`: `drums` | `keys` | `guitar` | `bass` | `strings` | `brass` | `woodwind` | `lead` | `pad` | `ethnic` | `fx` | `sample`。
+- `plugin`: 可选提示（如 `drum.gm` / `keys.gm` / `strings.gm` / `ethnic.gm` / `sample.file`）。
+- `channel`: 1–16（文件里从 1 起；与 Cubase 通道号一致）。
+- `program`: **1–128**（与 Cubase / FL Studio 面板一致；**不是** MIDI 线缆上的 0–127）。
+  - 大钢琴=`1`，尼龙吉他=`25`，原声贝斯=`33`，弦乐合奏=`49`，铜管组=`62`，长笛=`74`，Square Lead=`81`，Warm Pad=`90`，卡林巴=`109`，风笛=`110`，Crystal=`99`。
+  - `ethnic` 文件号 **105–112**（西塔琴…唢呐）；默认卡林巴 **109**。
+  - `lead` 文件号 **81–88**；`fx` 为 **97–104** 与 **113–128**。
+  - 侧边栏「切换乐器」两级选具体音色时，写入的也是这套 **1–128**。
+
+### ⚠️ Agent 易错：`program` 编号
+
+| 场景 | 大钢琴 | 卡林巴 | 风笛 |
+|------|--------|--------|------|
+| **`.daw` / UI（本项目）** | `1` | `109` | `110` |
+| MIDI 协议 / SoundFont 内部 | `0` | `108` | `109` |
+
+- **写 `.daw` 时一律用 1–128**，不要写 `program: 0`。
+- 从 GM 规格表（0–127）抄号时 **加 1**；从 Cubase/FL 面板抄号时 **原样写入**。
+- 旧文件 `# vs-daw 1` 仍按 0–127 读取；保存后会升为 `# vs-daw 2` 并改成 1–128。不要把 v1 的数字直接贴进 v2 工程。
 
 采样轨示例（路径相对包根；纯文本工程则相对 `.daw` 所在目录）：
 
@@ -89,22 +106,13 @@ assets/vocal.wav offset:-0.12  |....4===========|
 
 ## 编写规则
 
-1. 新文件带完整文件头与至少一条 `track`。
+1. 新文件带 `# vs-daw 2` 完整文件头与至少一条 `track`。
 2. 每小节恰好写 `steps` 个格子字符；不要把 `|` 算进去。
 3. 同一轨内各行总格数一致；乐器/音高名建议补到 6 字符宽。
 4. 修改现有文件时保留注释、小节线和未涉及轨。
 5. Agent 直接改文本；Pad 模式供用户键盘演奏（侧边栏选当前轨与八度）。
-6. 谱库在 `~/.vs-daw`；`examples/` 按 `demo/`（多轨演示）与 `loops/`（鼓点/节奏 loop：`styles/`、`rhythms/`、`legacy/`）划分。
 
-## 音频与 MIDI
+## 播放与导出
 
 - 播放：GM 轨 → 内存 MIDI → SoundFont（GM SF3）；`role: sample` → 触发 `assets/` 等采样文件并混音。
 - 导出：`VS DAW: 导出 MIDI`。若含采样轨，会提示「采样只能留在 .daw 包里」，确认后跳过采样轨导出。
-- 导入：`VS DAW: 导入 MIDI` → 写入 `~/.vs-daw`（纯文本）。
-
-## 常见错误
-
-- 不要用 Tab 或格内空格对齐。
-- 不要写旧版 `.drum` / `kit:` 头。
-- 不要在格子行尾写解释；说明放独立 `#` 注释行。
-- 延音 `=` 只能接在起音后；孤立的 `=` 无效。

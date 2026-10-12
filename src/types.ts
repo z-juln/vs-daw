@@ -11,7 +11,10 @@ export type TrackRole =
   | "strings"
   | "brass"
   | "woodwind"
+  | "lead"
   | "pad"
+  | "ethnic"
+  | "fx"
   | "sample";
 
 /** rest/hold；起音：o/x/X 或力度档 1(最弱)–9(最强)。 */

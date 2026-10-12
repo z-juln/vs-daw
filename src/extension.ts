@@ -14,7 +14,10 @@ import {
   DEFAULT_OCTAVE,
   DEFAULT_PROGRAM,
   DRUM_TO_GM,
+  instrumentsForRole,
   isPitchRole,
+  programLabel,
+  programUiNumber,
   ROLE_LABEL_ZH,
   TRACK_ROLES,
 } from "./midi/gm";
@@ -123,6 +126,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   learnStatus.command = "vsDaw.toggleMelodyLearn";
   context.subscriptions.push(learnStatus);
   let armedFallbackRole: TrackRole = "keys";
+  /** 未打开工程 / 轨未写 program 时，Pad 试听用的 GM 音色号。 */
+  let armedFallbackProgram = DEFAULT_PROGRAM.keys;
   /** Pad 基准八度（低排 zxcvbnm 的 C）；各 role 默认见 midi/gm.ts。 */
   let octave = DEFAULT_OCTAVE.keys;
   let sidebar: SidebarController | undefined;
@@ -180,9 +185,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (piano) {
       armedTrackName = piano.name;
       armedFallbackRole = "keys";
+      armedFallbackProgram = piano.program ?? DEFAULT_PROGRAM.keys;
     } else {
       armedTrackName = "piano";
       armedFallbackRole = "keys";
+      armedFallbackProgram = DEFAULT_PROGRAM.keys;
     }
     applyRoleOctave("keys");
   };
@@ -235,9 +242,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!session.tracks.some((track) => track.name === armedTrackName)) {
       armedTrackName = session.tracks[0]?.name ?? "drums";
       armedFallbackRole = session.tracks[0]?.role ?? "drums";
+      armedFallbackProgram = session.tracks[0]?.program
+        ?? DEFAULT_PROGRAM[armedFallbackRole];
     } else {
-      armedFallbackRole = session.tracks.find((track) => track.name === armedTrackName)?.role
-        ?? armedFallbackRole;
+      const armed = session.tracks.find((track) => track.name === armedTrackName);
+      armedFallbackRole = armed?.role ?? armedFallbackRole;
+      if (armed) {
+        armedFallbackProgram = armed.program ?? DEFAULT_PROGRAM[armed.role];
+      }
     }
     return session;
   };
@@ -593,7 +605,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const track = armedTrack();
     const role = track?.role ?? armedFallbackRole;
     const channel = track?.channel ?? DEFAULT_CHANNEL[role];
-    const program = track?.program ?? DEFAULT_PROGRAM[role];
+    const program = track?.program ?? armedFallbackProgram ?? DEFAULT_PROGRAM[role];
     if (role === "drums") {
       const drumId = getKeyMap()[key];
       if (!drumId) return undefined;
@@ -802,6 +814,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     learnFileLabel = path.basename(document.uri.fsPath || document.uri.path);
     armedTrackName = track.name;
     armedFallbackRole = track.role;
+    armedFallbackProgram = track.program ?? DEFAULT_PROGRAM[track.role];
     applyRoleOctave(track.role);
     if (!padMode.enabled) {
       await padMode.set(true);
@@ -896,32 +909,123 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   register("vsDaw.pickTrack", async () => {
     const session = currentSession();
-    const roleLabel = ROLE_LABEL_ZH;
-    const items = session?.tracks.length
-      ? session.tracks.map((track) => ({
-        label: track.name === armedTrackName
-          ? `$(check) ${roleLabel[track.role]} · ${track.name}`
-          : `${roleLabel[track.role]} · ${track.name}`,
-        description: track.role,
-        name: track.name,
-        role: track.role,
-      }))
-      : ROLE_PICK.map((item) => ({
-        label: item.role === armedFallbackRole
+    const currentRole = armedRole();
+    const currentProgram = armedTrack()?.program ?? armedFallbackProgram;
+
+    type CategoryPick = vscode.QuickPickItem & {
+      pick?: "track" | "category";
+      name?: string;
+      role?: TrackRole;
+      program?: number;
+    };
+
+    const categoryItems: CategoryPick[] = [];
+    if (session?.tracks.length) {
+      categoryItems.push({
+        label: "当前工程轨",
+        kind: vscode.QuickPickItemKind.Separator,
+      });
+      for (const track of session.tracks) {
+        if (track.role === "sample") continue;
+        const prog = track.program ?? DEFAULT_PROGRAM[track.role];
+        const timbre = track.role === "drums" ? ROLE_LABEL_ZH.drums : programLabel(prog);
+        categoryItems.push({
+          label: track.name === armedTrackName
+            ? `$(check) ${ROLE_LABEL_ZH[track.role]} · ${track.name}`
+            : `${ROLE_LABEL_ZH[track.role]} · ${track.name}`,
+          description: timbre,
+          pick: "track",
+          name: track.name,
+          role: track.role,
+          program: track.program,
+        });
+      }
+      categoryItems.push({
+        label: "按音色选择",
+        kind: vscode.QuickPickItemKind.Separator,
+      });
+    }
+
+    for (const item of ROLE_PICK) {
+      const hasChildren = instrumentsForRole(item.role).length > 0;
+      categoryItems.push({
+        label: item.role === currentRole && !session?.tracks.length
           ? `$(check) ${item.label}`
           : item.label,
-        description: "未打开工程时仅试听",
-        name: item.name,
+        description: hasChildren
+          ? "› 选具体音色"
+          : (session?.tracks.length ? "" : "未打开工程时仅试听"),
+        pick: "category",
         role: item.role,
-      }));
-    const picked = await vscode.window.showQuickPick(items, {
+        name: item.name,
+      });
+    }
+
+    const category = await vscode.window.showQuickPick(categoryItems, {
       title: "切换乐器",
-      placeHolder: "Pad 与录制将使用该轨",
+      placeHolder: "先选大类，再选具体音色；Pad 与录制将使用该选择",
     });
-    if (!picked) return;
-    armedTrackName = picked.name;
-    armedFallbackRole = picked.role;
-    applyRoleOctave(picked.role);
+    if (!category?.pick || category.role === undefined || category.name === undefined) return;
+
+    if (category.pick === "track") {
+      armedTrackName = category.name;
+      armedFallbackRole = category.role;
+      armedFallbackProgram = category.program ?? DEFAULT_PROGRAM[category.role];
+      applyRoleOctave(category.role);
+      updateStatus();
+      return;
+    }
+
+    let program = DEFAULT_PROGRAM[category.role];
+    const instruments = instrumentsForRole(category.role);
+    if (instruments.length > 0) {
+      const instrumentItems = instruments.map((inst) => ({
+        label: category.role === currentRole && inst.program === currentProgram
+          ? `$(check) ${inst.label}`
+          : inst.label,
+        description: `program ${programUiNumber(inst.program)}`,
+        program: inst.program,
+      }));
+      const instrument = await vscode.window.showQuickPick(instrumentItems, {
+        title: ROLE_LABEL_ZH[category.role],
+        placeHolder: "选择具体乐器 / 音色",
+        matchOnDescription: true,
+      });
+      if (!instrument) return;
+      program = instrument.program;
+    }
+
+    armedFallbackRole = category.role;
+    armedFallbackProgram = program;
+    applyRoleOctave(category.role);
+
+    const document = activeDawDocument();
+    const liveSession = document
+      ? parseSession(document.getText() || emptyTemplate())
+      : session;
+    const sameRole = liveSession?.tracks.filter((track) => track.role === category.role) ?? [];
+    const matched = sameRole.find((track) => (track.program ?? DEFAULT_PROGRAM[track.role]) === program)
+      ?? sameRole[0];
+
+    if (matched && document && liveSession) {
+      armedTrackName = matched.name;
+      if ((matched.program ?? DEFAULT_PROGRAM[matched.role]) !== program) {
+        const next = {
+          ...liveSession,
+          tracks: liveSession.tracks.map((track) => (
+            track.name === matched.name ? { ...track, program } : track
+          )),
+        };
+        await replaceDocumentText(document, formatSessionText(next));
+      }
+    } else {
+      armedTrackName = category.name;
+      if (document && liveSession?.tracks.length) {
+        void vscode.window.showInformationMessage(
+          `工程里没有「${ROLE_LABEL_ZH[category.role]}」轨，Pad 将以「${programLabel(program)}」试听；录制请先添加对应轨。`,
+        );
+      }
+    }
     updateStatus();
   });
   register("vsDaw.octaveUp", () => {
@@ -1183,6 +1287,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         tracks: (session?.tracks ?? []).map((item) => ({ name: item.name, role: item.role })),
         armedTrackName,
         armedRole: armedRole(),
+        armedProgram: armedTrack()?.program ?? armedFallbackProgram,
         octave,
         learnActive,
         learnPitch: learn?.pitch ?? "",

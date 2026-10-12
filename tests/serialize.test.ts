@@ -14,6 +14,18 @@ test("formatSessionText preserves sustain cells", () => {
   expect(parseSession(again).tracks.length).toBe(5);
 });
 
+test("formatSessionText writes vs-daw 2 and program 1–128", () => {
+  const text = formatSessionText(parseSession(`# vs-daw 1
+track piano
+role: keys
+program: 0
+C4 |x...|
+`));
+  expect(text).toMatch(/^# vs-daw 2/m);
+  expect(text).toMatch(/^program: 1$/m);
+  expect(parseSession(text).tracks[0].program).toBe(0);
+});
+
 test("pitch rows serialize high notes above low notes", () => {
   const session = parseSession(`# vs-daw 1
 bpm: 120

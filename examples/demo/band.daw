@@ -1,4 +1,4 @@
-# vs-daw 1
+# vs-daw 2
 bpm: 100
 meter: 4/4
 steps: 16
@@ -15,7 +15,7 @@ oh     |................|..............x.|
 track piano
 role: keys
 plugin: keys.gm
-program: 0
+program: 1
 G4     |........x=======|........x=======|
 E4     |....x===........|x===........x===|
 C4     |x===........x===|....x===........|
@@ -23,12 +23,12 @@ C4     |x===........x===|....x===........|
 track guitar
 role: guitar
 plugin: gtr.gm
-program: 24
+program: 25
 B3     |........x=======|x=======........|
 E3     |x=======........|....x=======....|
 
 track bass
 role: bass
 plugin: bass.gm
-program: 32
+program: 33
 E2     |x=======x=======|x===....x=======|

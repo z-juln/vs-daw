@@ -75,7 +75,28 @@ function inferRole(name: string): TrackRole {
   if (lower.includes("wood") || lower.includes("flute") || lower.includes("sax") || lower.includes("clarinet")) {
     return "woodwind";
   }
-  if (lower.includes("sample") || lower.includes("audio") || lower === "sfx") return "sample";
+  if (lower.includes("lead")) return "lead";
+  if (
+    lower.includes("ethnic")
+    || lower.includes("kalimba")
+    || lower.includes("bagpipe")
+    || lower.includes("sitar")
+    || lower.includes("koto")
+    || lower.includes("shamisen")
+    || lower.includes("banjo")
+    || lower.includes("fiddle")
+  ) {
+    return "ethnic";
+  }
+  if (lower.includes("sample") || lower.includes("audio")) return "sample";
+  if (
+    lower.includes("fx")
+    || lower === "sfx"
+    || lower.includes("effect")
+    || lower.includes("noise")
+  ) {
+    return "fx";
+  }
   if (lower.includes("pad") || lower.includes("synth")) return "pad";
   return "keys";
 }
@@ -85,11 +106,15 @@ function parseRole(raw: string): TrackRole | null {
   return TRACK_ROLES.includes(value) ? value : null;
 }
 
+/** 当前写入的格式版本：v2 起 `program:` 为 1–128（与 Cubase/FL 一致）。 */
+export const DAW_FORMAT_VERSION = 2;
+
 export function parseSession(text: string): Session {
   let bpm = 120;
   let meter = "4/4";
   let stepsPerBar = 16;
   let swing = 0;
+  let formatVersion = 1;
   let unsupportedVersion = false;
   const warnings: ParseWarning[] = [];
   const tracks: DawTrack[] = [];
@@ -103,7 +128,11 @@ export function parseSession(text: string): Session {
 
     if (trimmed.startsWith("#")) {
       const version = trimmed.match(/vs-daw\s+(\d+)/i);
-      if (version && version[1] !== "1") unsupportedVersion = true;
+      if (version) {
+        formatVersion = Number(version[1]);
+        if (!Number.isInteger(formatVersion) || formatVersion < 1) formatVersion = 1;
+        if (formatVersion > DAW_FORMAT_VERSION) unsupportedVersion = true;
+      }
       return;
     }
 
@@ -141,7 +170,13 @@ export function parseSession(text: string): Session {
           if (Number.isFinite(parsed)) swing = Math.min(100, Math.max(0, parsed));
           else warnings.push({ message: "swing 无效，使用 0", line: lineIndex });
         } else if (key === "version") {
-          unsupportedVersion = value !== "1";
+          const parsed = Number(value);
+          if (Number.isInteger(parsed) && parsed >= 1) {
+            formatVersion = parsed;
+            unsupportedVersion = parsed > DAW_FORMAT_VERSION;
+          } else {
+            unsupportedVersion = true;
+          }
         } else {
           warnings.push({ message: `未知文件头 "${key}"`, line: lineIndex });
         }
@@ -167,8 +202,18 @@ export function parseSession(text: string): Session {
         current.plugin = value || DEFAULT_PLUGIN[current.role];
       } else if (key === "program") {
         const parsed = Number(value);
-        if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 127) current.program = parsed;
-        else warnings.push({ message: "program 无效", line: lineIndex });
+        // v2+：文件 1–128 → 内部 0–127；v1：文件即内部 0–127
+        if (formatVersion >= 2) {
+          if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 128) {
+            current.program = parsed - 1;
+          } else {
+            warnings.push({ message: "program 无效（v2 起为 1–128）", line: lineIndex });
+          }
+        } else if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 127) {
+          current.program = parsed;
+        } else {
+          warnings.push({ message: "program 无效（v1 为 0–127）", line: lineIndex });
+        }
       } else if (key === "channel") {
         const parsed = Number(value);
         if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 16) current.channel = parsed - 1;

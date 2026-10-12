@@ -1,4 +1,4 @@
-# vs-daw 1
+# vs-daw 2
 bpm: 108
 meter: 4/4
 steps: 16
@@ -21,12 +21,12 @@ ride   |................|................|
 track guitar
 role: guitar
 plugin: gtr.gm
-program: 29
+program: 30
 B3     |........x=======|........x=======|
 E3     |x=======........|x=======........|
 
 track bass
 role: bass
 plugin: bass.gm
-program: 33
+program: 34
 E2     |x===....x=======|x===....x=======|

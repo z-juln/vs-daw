@@ -2,7 +2,7 @@
   "name": "vs-daw",
   "displayName": "VS DAW",
   "description": "纯文本/包格式多轨 DAW：GM 乐器与采样、MIDI+SoundFont 播放",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "license": "MIT",
   "publisher": "vs-daw",
   "engines": {

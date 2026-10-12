@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { DEFAULT_KEY_MAP, DRUM_LABELS } from "../drums";
-import { ROLE_LABEL_ZH } from "../midi/gm";
+import { DEFAULT_PROGRAM, programLabel, programUiNumber, ROLE_LABEL_ZH } from "../midi/gm";
 import { pitchPadRows } from "../padLayout";
 import { TrackRole } from "../types";
 
@@ -17,6 +17,8 @@ export interface RecorderViewState {
   tracks: { name: string; role: TrackRole }[];
   armedTrackName: string;
   armedRole: TrackRole;
+  /** 当前 Pad 音色（内部 0–127；展示时 +1）。 */
+  armedProgram?: number;
   octave: number;
   learnActive: boolean;
   learnPitch: string;
@@ -85,9 +87,15 @@ export class RecorderProvider implements vscode.WebviewViewProvider {
   }
 
   private serialize(state: RecorderViewState) {
+    const program = state.armedProgram ?? DEFAULT_PROGRAM[state.armedRole];
+    const roleLabel = ROLE_LABEL_ZH[state.armedRole];
+    const instrumentLabel = state.armedRole === "drums" || state.armedRole === "sample"
+      ? `${roleLabel} · ${state.armedTrackName}`
+      : `${roleLabel} · ${programLabel(program)} · #${programUiNumber(program)}`;
     return {
       ...state,
-      roleLabel: ROLE_LABEL_ZH[state.armedRole],
+      roleLabel,
+      instrumentLabel,
       clock: `${formatClock(state.positionSec)} / ${formatClock(state.durationSec)}`,
       progressMax: Math.max(0.001, state.durationSec),
       pads: this.pads(state),
@@ -259,7 +267,7 @@ function renderTransport(s) {
   $('learn').textContent = s.learnActive ? '跟练：ON' : '跟练';
   $('learn').classList.toggle('on', !!s.learnActive);
   $('play').textContent = s.playing ? '暂停' : '播放';
-  $('track').textContent = '乐器：' + s.roleLabel + ' · ' + s.armedTrackName;
+  $('track').textContent = '乐器：' + (s.instrumentLabel || (s.roleLabel + ' · ' + s.armedTrackName));
   $('octUp').style.display = s.armedRole === 'drums' ? 'none' : '';
   $('octDown').style.display = s.armedRole === 'drums' ? 'none' : '';
   $('octUp').textContent = '低排 C' + s.octave + ' ↑';

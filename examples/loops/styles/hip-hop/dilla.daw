@@ -1,4 +1,4 @@
-# vs-daw 1
+# vs-daw 2
 bpm: 86
 meter: 4/4
 steps: 16
@@ -21,7 +21,7 @@ ride   |................|................|
 track keys
 role: keys
 plugin: keys.gm
-program: 4
+program: 5
 G3     |....x=======....|........x=======|
 Eb3    |........x=======|x=======........|
 C3     |x=======........|....x=======....|
@@ -29,5 +29,5 @@ C3     |x=======........|....x=======....|
 track bass
 role: bass
 plugin: bass.gm
-program: 38
+program: 39
 C2     |x=======........|x===....x=======|

@@ -2,6 +2,19 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.6] - 2026-10-12
+
+### Added
+
+- 轨角色扩展：`lead` / `ethnic` / `fx`（合成 Lead、民族乐器、音效/打击）
+- 民族乐器默认卡林巴（文件 `program: 109`）；可改 `110` 风笛、`105` 西塔琴等
+- 「切换乐器」支持二级菜单：大类 → 具体音色（如卡林巴 / 风笛）
+
+### Changed
+
+- 格式 **`# vs-daw 2`**：`.daw` 中 `program:` 改为 **1–128**（与 Cubase/FL/UI 一致）；引擎内部仍为 0–127
+- 旧 `# vs-daw 1` 工程仍按 0–127 读取；保存后自动升为 v2
+
 ## [1.0.5] - 2026-10-10
 
 ### Added

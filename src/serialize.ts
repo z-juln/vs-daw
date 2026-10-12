@@ -1,7 +1,9 @@
 import { BUILTIN_ORDER, ID_WIDTH } from "./drums";
 import { parseSession } from "./parser";
 import { pitchToMidi } from "./pitch";
+import { DAW_FORMAT_VERSION } from "./parser";
 import { CellKind, DawTrack, Session, TrackRole } from "./types";
+import { programUiNumber } from "./midi/gm";
 import { cellToChar } from "./velocity";
 
 const toChar = (cell: CellKind): string => cellToChar(cell);
@@ -74,7 +76,7 @@ export function emptyTemplate(options: EmptyTemplateOptions = {}): string {
   const bars = Number.isInteger(options.bars) && options.bars! > 0 ? options.bars! : 2;
   const rests: CellKind[] = Array(bars * 16).fill("rest");
   const lines = [
-    "# vs-daw 1",
+    `# vs-daw ${DAW_FORMAT_VERSION}`,
     `bpm: ${bpm}`,
     "meter: 4/4",
     "steps: 16",
@@ -108,7 +110,7 @@ export function emptyTemplate(options: EmptyTemplateOptions = {}): string {
 
 export function formatSessionText(session: Session): string {
   const lines = [
-    "# vs-daw 1",
+    `# vs-daw ${DAW_FORMAT_VERSION}`,
     `bpm: ${session.bpm}`,
     `meter: ${session.meter}`,
     `steps: ${session.stepsPerBar}`,
@@ -119,7 +121,8 @@ export function formatSessionText(session: Session): string {
     lines.push(`track ${track.name}`);
     lines.push(`role: ${track.role}`);
     lines.push(`plugin: ${track.plugin}`);
-    if (track.program !== undefined) lines.push(`program: ${track.program}`);
+    // 文件写 1–128；内存 / MIDI 仍为 0–127
+    if (track.program !== undefined) lines.push(`program: ${programUiNumber(track.program)}`);
     if (track.channel !== undefined) lines.push(`channel: ${track.channel + 1}`);
     if (track.role === "sample" && track.offsetSec !== undefined && track.offsetSec !== 0) {
       lines.push(`offset: ${trimOffset(track.offsetSec)}`);
